@@ -41,18 +41,33 @@ export default {
             const marketState = getMarketState(rsi);
             const movingAverage = calculateSMA(market.closes, 20);
             const bands = calculateBollingerBands(market.closes, 20, 2);
+            const support = Math.min(...market.lows.slice(-20));
+            const resistance = Math.max(...market.highs.slice(-20));
+
+            const signalResult = generateSignal({
+              latestClose,
+              rsi,
+              trend,
+              movingAverage,
+              bands,
+              support,
+              resistance
+            });
 
             const message =
               `PAIR: ${formatPair(pair)}\n` +
               `TIMEFRAME: 1M\n\n` +
-              `Latest Close: ${latestClose}\n` +
-              `RSI: ${rsi.toFixed(2)}\n` +
               `Trend: ${trend}\n` +
+              `RSI: ${rsi.toFixed(2)}\n` +
               `Market State: ${marketState}\n` +
               `MA(20): ${movingAverage.toFixed(2)}\n` +
               `BB Upper: ${bands.upper.toFixed(2)}\n` +
-              `BB Lower: ${bands.lower.toFixed(2)}\n\n` +
-              `Status: Testing analysis layer 2 (RSI + trend + MA + Bollinger).`;
+              `BB Lower: ${bands.lower.toFixed(2)}\n` +
+              `Support: ${support.toFixed(2)}\n` +
+              `Resistance: ${resistance.toFixed(2)}\n\n` +
+              `Signal: ${signalResult.signal}\n` +
+              `Confidence: ${signalResult.confidence}%\n\n` +
+              `Status: Testing signal layer 1.`;
 
             await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message);
           }
@@ -218,6 +233,57 @@ function calculateBollingerBands(values, period = 20, multiplier = 2) {
     upper: middle + multiplier * standardDeviation,
     middle,
     lower: middle - multiplier * standardDeviation
+  };
+}
+
+function generateSignal(data) {
+  const { latestClose, rsi, trend, bands, support, resistance } = data;
+
+  const bandRange = bands.upper - bands.lower || 1;
+  const distanceToLowerBand = Math.abs(latestClose - bands.lower) / bandRange;
+  const distanceToUpperBand = Math.abs(latestClose - bands.upper) / bandRange;
+
+  const nearLowerBand = distanceToLowerBand <= 0.15;
+  const nearUpperBand = distanceToUpperBand <= 0.15;
+  const nearSupport = Math.abs(latestClose - support) / latestClose <= 0.003;
+  const nearResistance = Math.abs(latestClose - resistance) / latestClose <= 0.003;
+
+  let signal = "NO SIGNAL";
+  let confidence = 50;
+
+  if ((nearLowerBand || nearSupport) && rsi <= 35 && trend !== "Down") {
+    signal = "BUY";
+    confidence = 78;
+
+    if (trend === "Up") {
+      confidence += 7;
+    }
+
+    if (nearLowerBand && nearSupport) {
+      confidence += 5;
+    }
+  } else if ((nearUpperBand || nearResistance) && rsi >= 65 && trend !== "Up") {
+    signal = "SELL";
+    confidence = 78;
+
+    if (trend === "Down") {
+      confidence += 7;
+    }
+
+    if (nearUpperBand && nearResistance) {
+      confidence += 5;
+    }
+  } else {
+    confidence = 55;
+  }
+
+  if (confidence > 95) {
+    confidence = 95;
+  }
+
+  return {
+    signal,
+    confidence
   };
 }
 
