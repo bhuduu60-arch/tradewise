@@ -66,8 +66,9 @@ export default {
               `Support: ${support.toFixed(2)}\n` +
               `Resistance: ${resistance.toFixed(2)}\n\n` +
               `Signal: ${signalResult.signal}\n` +
-              `Confidence: ${signalResult.confidence}%\n\n` +
-              `Status: Testing signal layer 1.`;
+              `Confidence: ${signalResult.confidence}%\n` +
+              `Reason: ${signalResult.reason}\n\n` +
+              `Status: Testing signal layer 2.`;
 
             await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message);
           }
@@ -249,14 +250,17 @@ function generateSignal(data) {
   const nearResistance = Math.abs(latestClose - resistance) / latestClose <= 0.003;
 
   let signal = "NO SIGNAL";
-  let confidence = 50;
+  let confidence = 55;
+  let reason = "Conditions are mixed. Safer to wait.";
 
   if ((nearLowerBand || nearSupport) && rsi <= 35 && trend !== "Down") {
     signal = "BUY";
     confidence = 78;
+    reason = "Price is near lower band/support with RSI weakness and no strong downtrend.";
 
     if (trend === "Up") {
       confidence += 7;
+      reason = "Price is near lower band/support, RSI is weak, and trend is turning upward.";
     }
 
     if (nearLowerBand && nearSupport) {
@@ -265,16 +269,16 @@ function generateSignal(data) {
   } else if ((nearUpperBand || nearResistance) && rsi >= 65 && trend !== "Up") {
     signal = "SELL";
     confidence = 78;
+    reason = "Price is near upper band/resistance with RSI strength and no strong uptrend.";
 
     if (trend === "Down") {
       confidence += 7;
+      reason = "Price is near upper band/resistance, RSI is elevated, and trend is turning downward.";
     }
 
     if (nearUpperBand && nearResistance) {
       confidence += 5;
     }
-  } else {
-    confidence = 55;
   }
 
   if (confidence > 95) {
@@ -283,7 +287,8 @@ function generateSignal(data) {
 
   return {
     signal,
-    confidence
+    confidence,
+    reason
   };
 }
 
