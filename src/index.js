@@ -85,6 +85,13 @@ export default {
         ) {
           const pair = getRequestedPair(text);
           await handleAnalyze(env, chatId, pair, isOwner);
+        } else if (text === "🧠 Ask AI") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "🧠 Tradewise Help Assistant\n\nAsk a trading help question like:\n- What is RSI?\n- What does NO SIGNAL mean?\n- When should I avoid trading?\n- What is volatility?\n- What is compression?\n\nThis help assistant is now being built in testing mode.",
+            getKeyboard(isOwner)
+          );
         } else if (text === "📘 Help") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
@@ -414,8 +421,8 @@ function formatPair(pair) {
 function getKeyboard(isOwner = false) {
   const keyboard = [
     [{ text: "📊 Analyze" }, { text: "₿ BTCUSDT" }, { text: "Ξ ETHUSDT" }],
-    [{ text: "📘 Help" }, { text: "⚠️ Risk Tips" }],
-    [{ text: "👤 My Status" }]
+    [{ text: "🧠 Ask AI" }, { text: "📘 Help" }],
+    [{ text: "⚠️ Risk Tips" }, { text: "👤 My Status" }]
   ];
 
   if (isOwner) {
