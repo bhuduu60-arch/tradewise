@@ -198,13 +198,14 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `Market State: ${marketState}\n` +
     `MA(20): ${movingAverage.toFixed(2)}\n` +
     `BB Upper: ${bands.upper.toFixed(2)}\n` +
+    `BB Middle: ${bands.middle.toFixed(2)}\n` +
     `BB Lower: ${bands.lower.toFixed(2)}\n` +
     `Support: ${support.toFixed(2)}\n` +
     `Resistance: ${resistance.toFixed(2)}\n\n` +
     `Signal: ${signalResult.signal}\n` +
     `Confidence: ${signalResult.confidence}%\n` +
     `Reason: ${signalResult.reason}\n\n` +
-    `Status: Testing signal layer 2 with UI buttons, user tracking, and admin layer.`;
+    `Status: Testing safer signal layer with stronger no-trade filter.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
@@ -551,6 +552,7 @@ function generateSignal(data) {
   const { latestClose, rsi, trend, bands, support, resistance } = data;
 
   const bandRange = bands.upper - bands.lower || 1;
+  const middleDistanceRatio = Math.abs(latestClose - bands.middle) / bandRange;
   const distanceToLowerBand = Math.abs(latestClose - bands.lower) / bandRange;
   const distanceToUpperBand = Math.abs(latestClose - bands.upper) / bandRange;
 
@@ -558,37 +560,64 @@ function generateSignal(data) {
   const nearUpperBand = distanceToUpperBand <= 0.15;
   const nearSupport = Math.abs(latestClose - support) / latestClose <= 0.003;
   const nearResistance = Math.abs(latestClose - resistance) / latestClose <= 0.003;
+  const nearMiddleBand = middleDistanceRatio <= 0.12;
+  const neutralRSI = rsi > 40 && rsi < 60;
 
   let signal = "NO SIGNAL";
-  let confidence = 55;
+  let confidence = 52;
   let reason = "Conditions are mixed. Safer to wait.";
+
+  if (nearMiddleBand && neutralRSI && trend === "Sideways") {
+    return {
+      signal: "NO SIGNAL",
+      confidence: 35,
+      reason: "Price is near the middle band with neutral RSI and sideways trend. No clear edge."
+    };
+  }
 
   if ((nearLowerBand || nearSupport) && rsi <= 35 && trend !== "Down") {
     signal = "BUY";
-    confidence = 78;
+    confidence = 74;
     reason = "Price is near lower band/support with RSI weakness and no strong downtrend.";
 
     if (trend === "Up") {
-      confidence += 7;
+      confidence += 8;
       reason = "Price is near lower band/support, RSI is weak, and trend is turning upward.";
+    } else if (trend === "Sideways") {
+      confidence += 3;
     }
 
     if (nearLowerBand && nearSupport) {
-      confidence += 5;
+      confidence += 6;
+    }
+
+    if (rsi <= 30) {
+      confidence += 4;
     }
   } else if ((nearUpperBand || nearResistance) && rsi >= 65 && trend !== "Up") {
     signal = "SELL";
-    confidence = 78;
+    confidence = 74;
     reason = "Price is near upper band/resistance with RSI strength and no strong uptrend.";
 
     if (trend === "Down") {
-      confidence += 7;
+      confidence += 8;
       reason = "Price is near upper band/resistance, RSI is elevated, and trend is turning downward.";
+    } else if (trend === "Sideways") {
+      confidence += 3;
     }
 
     if (nearUpperBand && nearResistance) {
-      confidence += 5;
+      confidence += 6;
     }
+
+    if (rsi >= 70) {
+      confidence += 4;
+    }
+  }
+
+  if (signal === "NO SIGNAL" && neutralRSI) {
+    confidence = 40;
+    reason = "RSI is neutral and setup lacks strong reversal pressure.";
   }
 
   if (confidence > 95) {
