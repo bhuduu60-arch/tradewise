@@ -15,14 +15,19 @@ export default {
       const update = await request.json();
 
       if (update.message) {
-        const chatId = update.message.chat.id;
-        const text = (update.message.text || "").trim();
+        const message = update.message;
+        const chatId = message.chat.id;
+        const text = (message.text || "").trim();
+
+        await trackUser(env, message);
 
         if (text === "/start") {
+          const totalUsers = await getUserCount(env);
+
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.",
+            `Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.\n\nTotal Users: ${totalUsers}`,
             getMainKeyboard()
           );
         } else if (
@@ -49,10 +54,16 @@ export default {
             getMainKeyboard()
           );
         } else if (text === "👤 My Status") {
+          const totalUsers = await getUserCount(env);
+          const userData = await getUserData(env, chatId);
+
+          const firstSeen = userData?.first_seen || "unknown";
+          const lastSeen = userData?.last_seen || "unknown";
+
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `Your Chat ID: ${chatId}\n\nUser tools are still being built.`,
+            `Your Chat ID: ${chatId}\nFirst Seen: ${firstSeen}\nLast Seen: ${lastSeen}\n\nTotal Users: ${totalUsers}\n\nUser tracking is now active (testing mode).`,
             getMainKeyboard()
           );
         } else {
@@ -118,9 +129,64 @@ async function handleAnalyze(env, chatId, pair) {
     `Signal: ${signalResult.signal}\n` +
     `Confidence: ${signalResult.confidence}%\n` +
     `Reason: ${signalResult.reason}\n\n` +
-    `Status: Testing signal layer 2 with UI buttons.`;
+    `Status: Testing signal layer 2 with UI buttons and user tracking.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getMainKeyboard());
+}
+
+async function trackUser(env, message) {
+  if (!env.USERS_KV || !message || !message.chat) {
+    return;
+  }
+
+  const chatId = String(message.chat.id);
+  const key = `user:${chatId}`;
+  const existing = await env.USERS_KV.get(key);
+  const now = new Date().toISOString();
+
+  let userData = null;
+
+  if (existing) {
+    userData = JSON.parse(existing);
+    userData.last_seen = now;
+  } else {
+    userData = {
+      chat_id: chatId,
+      username: message.from?.username || "",
+      first_name: message.from?.first_name || "",
+      first_seen: now,
+      last_seen: now
+    };
+
+    const countRaw = await env.USERS_KV.get("stats:total_users");
+    const currentCount = Number(countRaw || "0");
+    await env.USERS_KV.put("stats:total_users", String(currentCount + 1));
+  }
+
+  await env.USERS_KV.put(key, JSON.stringify(userData));
+}
+
+async function getUserCount(env) {
+  if (!env.USERS_KV) {
+    return 0;
+  }
+
+  const countRaw = await env.USERS_KV.get("stats:total_users");
+  return Number(countRaw || "0");
+}
+
+async function getUserData(env, chatId) {
+  if (!env.USERS_KV) {
+    return null;
+  }
+
+  const raw = await env.USERS_KV.get(`user:${chatId}`);
+
+  if (!raw) {
+    return null;
+  }
+
+  return JSON.parse(raw);
 }
 
 function getRequestedPair(text) {
