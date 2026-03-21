@@ -29,6 +29,26 @@ export default {
             `Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.`,
             getKeyboard(isOwner)
           );
+        } else if (isOwner && text.startsWith("/broadcast ")) {
+          const broadcastText = text.replace("/broadcast", "").trim();
+
+          if (!broadcastText) {
+            await sendTelegramMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              "Broadcast message cannot be empty.\n\nUse:\n/broadcast Your message here",
+              getKeyboard(isOwner)
+            );
+          } else {
+            const result = await broadcastToUsers(env, broadcastText);
+
+            await sendTelegramMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              `📢 Broadcast Complete\n\nSent: ${result.sent}\nFailed: ${result.failed}`,
+              getKeyboard(isOwner)
+            );
+          }
         } else if (isOwner && text.startsWith("/signal ")) {
           const parsed = parseManualSignal(text);
 
@@ -111,7 +131,7 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Broadcast mode will be added next.\n\nPlanned format:\n/broadcast your message here",
+            "Broadcast command is now active.\n\nUse:\n/broadcast Your message here",
             getKeyboard(isOwner)
           );
         } else if (isOwner && text === "📈 Drop Signal") {
@@ -218,6 +238,46 @@ function parseManualSignal(text) {
     confidence,
     reason
   };
+}
+
+async function broadcastToUsers(env, messageText) {
+  if (!env.USERS_KV) {
+    return { sent: 0, failed: 0 };
+  }
+
+  const list = await env.USERS_KV.list({ prefix: "user:" });
+  let sent = 0;
+  let failed = 0;
+
+  for (const key of list.keys) {
+    const raw = await env.USERS_KV.get(key.name);
+
+    if (!raw) {
+      failed += 1;
+      continue;
+    }
+
+    const user = JSON.parse(raw);
+    const targetChatId = user.chat_id;
+
+    try {
+      const response = await sendTelegramMessage(
+        env.TELEGRAM_BOT_TOKEN,
+        targetChatId,
+        `📢 OWNER BROADCAST\n\n${messageText}`
+      );
+
+      if (response.ok) {
+        sent += 1;
+      } else {
+        failed += 1;
+      }
+    } catch (error) {
+      failed += 1;
+    }
+  }
+
+  return { sent, failed };
 }
 
 async function trackUser(env, message) {
