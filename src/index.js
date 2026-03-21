@@ -1,7 +1,7 @@
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "GET") {
-      return new Response("Tradewise Telegram bot worker is live.", {
+      return new Response("Tradewise bot is live.", {
         status: 200,
         headers: { "Content-Type": "text/plain" }
       });
@@ -27,7 +27,7 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `👋 Welcome to Tradewise Bot\n\nUse this bot for safer market analysis signals.`,
+            `👋 Welcome to Tradewise\n\nUse this bot for safer short-term market analysis signals.`,
             getKeyboard(isOwner)
           );
         } else if (isOwner && text.startsWith("/broadcast ")) {
@@ -104,7 +104,7 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "📘 Help\n\nUse /analyze or tap the buttons below to analyze a pair.\n\nThis bot is still in testing/building mode.",
+            "📘 Help\n\nUse /analyze or tap the buttons below to analyze a pair.",
             getKeyboard(isOwner)
           );
         } else if (text === "⚠️ Risk Tips") {
@@ -139,7 +139,7 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `👥 Owner Admin Panel\n\n👤 Total Users: ${stats.totalUsers}\n🕒 Active (24h): ${stats.active24h}\n🆔 Owner ID: ${env.OWNER_TELEGRAM_ID}\n🛠 Mode: Testing / Admin Layer Active`,
+            `👥 Owner Admin Panel\n\n👤 Total Users: ${stats.totalUsers}\n🕒 Active (24h): ${stats.active24h}\n🆔 Owner ID: ${env.OWNER_TELEGRAM_ID}`,
             getKeyboard(isOwner)
           );
         } else if (isOwner && text === "📢 Broadcast") {
@@ -186,9 +186,10 @@ export default {
 };
 
 async function handleAnalyze(env, chatId, pair, isOwner) {
-  const market = await getBinanceCandles(pair, "1m", 30);
+  const market1m = await getBinanceCandles(pair, "1m", 30);
+  const market5m = await getBinanceCandles(pair, "5m", 30);
 
-  if (!market.ok) {
+  if (!market1m.ok || !market5m.ok) {
     await sendTelegramMessage(
       env.TELEGRAM_BOT_TOKEN,
       chatId,
@@ -198,21 +199,23 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     return;
   }
 
-  const latestClose = market.closes[market.closes.length - 1];
-  const rsi = calculateRSI(market.closes, 14);
-  const trend = detectTrend(market.closes);
+  const latestClose = market1m.closes[market1m.closes.length - 1];
+  const rsi = calculateRSI(market1m.closes, 14);
+  const trend = detectTrend(market1m.closes);
+  const higherTrend = detectTrend(market5m.closes);
   const marketState = getMarketState(rsi);
-  const movingAverage = calculateSMA(market.closes, 20);
-  const bands = calculateBollingerBands(market.closes, 20, 2);
-  const support = Math.min(...market.lows.slice(-20));
-  const resistance = Math.max(...market.highs.slice(-20));
-  const volatility = calculateVolatilityState(market.highs, market.lows, market.closes);
-  const compression = detectCompression(market.highs, market.lows, market.closes);
+  const movingAverage = calculateSMA(market1m.closes, 20);
+  const bands = calculateBollingerBands(market1m.closes, 20, 2);
+  const support = Math.min(...market1m.lows.slice(-20));
+  const resistance = Math.max(...market1m.highs.slice(-20));
+  const volatility = calculateVolatilityState(market1m.highs, market1m.lows, market1m.closes);
+  const compression = detectCompression(market1m.highs, market1m.lows, market1m.closes);
 
   const signalResult = generateSignal({
     latestClose,
     rsi,
     trend,
+    higherTrend,
     movingAverage,
     bands,
     support,
@@ -224,7 +227,8 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
   const message =
     `📊 TRADEWISE ANALYSIS\n\n` +
     `💱 Pair: ${formatPair(pair)}\n` +
-    `⏱ Timeframe: 1M\n\n` +
+    `⏱ Timeframe: 1M\n` +
+    `🧭 5M Trend: ${higherTrend}\n\n` +
     `📈 Trend: ${trend}\n` +
     `📍 Market State: ${marketState}\n` +
     `📉 RSI: ${rsi.toFixed(2)}\n` +
@@ -240,8 +244,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `🔼 BB Upper: ${bands.upper.toFixed(2)}\n` +
     `➖ BB Middle: ${bands.middle.toFixed(2)}\n` +
     `🔽 BB Lower: ${bands.lower.toFixed(2)}\n\n` +
-    `⚠️ Safer setups are preferred. If the bot says NO SIGNAL, avoid forcing entry.\n\n` +
-    `🧪 Status: Testing polished signal output.`;
+    `⚠️ Safer setups are preferred. If the bot says NO SIGNAL, avoid forcing entry.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
@@ -714,7 +717,7 @@ function getSignalQuality(signal, confidence) {
 }
 
 function generateSignal(data) {
-  const { latestClose, rsi, trend, bands, support, resistance, volatility, compression } = data;
+  const { latestClose, rsi, trend, higherTrend, bands, support, resistance, volatility, compression } = data;
 
   const bandRange = bands.upper - bands.lower || 1;
   const middleDistanceRatio = Math.abs(latestClose - bands.middle) / bandRange;
@@ -799,6 +802,16 @@ function generateSignal(data) {
     }
   }
 
+  if (signal === "BUY" && higherTrend === "Down") {
+    confidence -= 12;
+    reason += " Higher timeframe trend is still down, so confirmation is weaker.";
+  }
+
+  if (signal === "SELL" && higherTrend === "Up") {
+    confidence -= 12;
+    reason += " Higher timeframe trend is still up, so confirmation is weaker.";
+  }
+
   if (signal !== "NO SIGNAL" && volatility.state === "High") {
     confidence -= 10;
     reason += " Volatility is high, so confidence is reduced.";
@@ -820,6 +833,11 @@ function generateSignal(data) {
 
   if (confidence > 95) {
     confidence = 95;
+  }
+
+  if (signal !== "NO SIGNAL" && confidence < 55) {
+    signal = "NO SIGNAL";
+    reason = "Setup exists, but confirmation is too weak after filters. Safer to wait.";
   }
 
   return {
