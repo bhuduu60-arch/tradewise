@@ -179,6 +179,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
   const bands = calculateBollingerBands(market.closes, 20, 2);
   const support = Math.min(...market.lows.slice(-20));
   const resistance = Math.max(...market.highs.slice(-20));
+  const volatility = calculateVolatilityState(market.highs, market.lows, market.closes);
 
   const signalResult = generateSignal({
     latestClose,
@@ -187,7 +188,8 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     movingAverage,
     bands,
     support,
-    resistance
+    resistance,
+    volatility
   });
 
   const message =
@@ -196,6 +198,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `Trend: ${trend}\n` +
     `RSI: ${rsi.toFixed(2)}\n` +
     `Market State: ${marketState}\n` +
+    `Volatility: ${volatility.state}\n` +
     `MA(20): ${movingAverage.toFixed(2)}\n` +
     `BB Upper: ${bands.upper.toFixed(2)}\n` +
     `BB Middle: ${bands.middle.toFixed(2)}\n` +
@@ -205,7 +208,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `Signal: ${signalResult.signal}\n` +
     `Confidence: ${signalResult.confidence}%\n` +
     `Reason: ${signalResult.reason}\n\n` +
-    `Status: Testing safer signal layer with stronger no-trade filter.`;
+    `Status: Testing safer signal layer with volatility filter.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
@@ -552,8 +555,29 @@ function calculateBollingerBands(values, period = 20, multiplier = 2) {
   };
 }
 
+function calculateVolatilityState(highs, lows, closes) {
+  if (!highs || !lows || !closes || closes.length < 10) {
+    return { state: "Normal", ratio: 0 };
+  }
+
+  const recentRanges = highs.slice(-10).map((high, index) => high - lows.slice(-10)[index]);
+  const averageRange = average(recentRanges);
+  const latestClose = closes[closes.length - 1];
+  const rangeRatio = latestClose > 0 ? averageRange / latestClose : 0;
+
+  if (rangeRatio < 0.0008) {
+    return { state: "Low", ratio: rangeRatio };
+  }
+
+  if (rangeRatio > 0.0035) {
+    return { state: "High", ratio: rangeRatio };
+  }
+
+  return { state: "Normal", ratio: rangeRatio };
+}
+
 function generateSignal(data) {
-  const { latestClose, rsi, trend, bands, support, resistance } = data;
+  const { latestClose, rsi, trend, bands, support, resistance, volatility } = data;
 
   const bandRange = bands.upper - bands.lower || 1;
   const middleDistanceRatio = Math.abs(latestClose - bands.middle) / bandRange;
@@ -570,6 +594,14 @@ function generateSignal(data) {
   let signal = "NO SIGNAL";
   let confidence = 52;
   let reason = "Conditions are mixed. Safer to wait.";
+
+  if (volatility.state === "Low") {
+    return {
+      signal: "NO SIGNAL",
+      confidence: 30,
+      reason: "Volatility is too low. Market is too compressed for a safer entry."
+    };
+  }
 
   if (nearMiddleBand && neutralRSI && trend === "Sideways") {
     return {
@@ -619,9 +651,18 @@ function generateSignal(data) {
     }
   }
 
+  if (signal !== "NO SIGNAL" && volatility.state === "High") {
+    confidence -= 10;
+    reason += " Volatility is high, so confidence is reduced.";
+  }
+
   if (signal === "NO SIGNAL" && neutralRSI) {
     confidence = 40;
     reason = "RSI is neutral and setup lacks strong reversal pressure.";
+  }
+
+  if (confidence < 25) {
+    confidence = 25;
   }
 
   if (confidence > 95) {
