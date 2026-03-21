@@ -26,21 +26,28 @@ export default {
           );
         } else if (text.startsWith("/analyze")) {
           const pair = getRequestedPair(text);
-          const result = await getBinancePrice(pair);
+          const market = await getBinanceCandles(pair, "1m", 20);
 
-          if (result.ok) {
-            const message =
-              `PAIR: ${formatPair(pair)}\n` +
-              `Latest Price: ${result.price}\n\n` +
-              `Status: Live market data fetched successfully.`;
-
-            await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message);
-          } else {
+          if (!market.ok) {
             await sendTelegramMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              `Could not fetch data for pair: ${pair}`
+              `Could not fetch candle data for pair: ${pair}`
             );
+          } else {
+            const latestClose = market.closes[market.closes.length - 1];
+            const highestHigh = Math.max(...market.highs);
+            const lowestLow = Math.min(...market.lows);
+
+            const message =
+              `PAIR: ${formatPair(pair)}\n` +
+              `TIMEFRAME: 1M\n\n` +
+              `Latest Close: ${latestClose}\n` +
+              `High (20 candles): ${highestHigh}\n` +
+              `Low (20 candles): ${lowestLow}\n\n` +
+              `Status: Real OHLC candle data fetched successfully.`;
+
+            await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message);
           }
         } else {
           await sendTelegramMessage(
@@ -77,10 +84,10 @@ function formatPair(pair) {
   return pair;
 }
 
-async function getBinancePrice(pair) {
+async function getBinanceCandles(pair, interval = "1m", limit = 20) {
   try {
     const response = await fetch(
-      `https://api.binance.com/api/v3/ticker/price?symbol=${pair}`
+      `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${interval}&limit=${limit}`
     );
 
     if (!response.ok) {
@@ -89,13 +96,23 @@ async function getBinancePrice(pair) {
 
     const data = await response.json();
 
-    if (!data.price) {
+    if (!Array.isArray(data) || data.length === 0) {
       return { ok: false };
     }
 
+    const opens = data.map(candle => Number(candle[1]));
+    const highs = data.map(candle => Number(candle[2]));
+    const lows = data.map(candle => Number(candle[3]));
+    const closes = data.map(candle => Number(candle[4]));
+    const volumes = data.map(candle => Number(candle[5]));
+
     return {
       ok: true,
-      price: data.price
+      opens,
+      highs,
+      lows,
+      closes,
+      volumes
     };
   } catch (error) {
     return { ok: false };
