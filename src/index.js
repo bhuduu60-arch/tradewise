@@ -22,61 +22,45 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.\n\nCommands:\n/start - show bot status\n/analyze - analyze default pair\n/analyze BTCUSDT - analyze custom pair"
+            "Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.",
+            getMainKeyboard()
           );
-        } else if (text.startsWith("/analyze")) {
+        } else if (
+          text === "/analyze" ||
+          text === "📊 Analyze" ||
+          text === "₿ BTCUSDT" ||
+          text === "Ξ ETHUSDT" ||
+          text.startsWith("/analyze ")
+        ) {
           const pair = getRequestedPair(text);
-          const market = await getBinanceCandles(pair, "1m", 30);
-
-          if (!market.ok) {
-            await sendTelegramMessage(
-              env.TELEGRAM_BOT_TOKEN,
-              chatId,
-              `Could not fetch candle data for pair: ${pair}`
-            );
-          } else {
-            const latestClose = market.closes[market.closes.length - 1];
-            const rsi = calculateRSI(market.closes, 14);
-            const trend = detectTrend(market.closes);
-            const marketState = getMarketState(rsi);
-            const movingAverage = calculateSMA(market.closes, 20);
-            const bands = calculateBollingerBands(market.closes, 20, 2);
-            const support = Math.min(...market.lows.slice(-20));
-            const resistance = Math.max(...market.highs.slice(-20));
-
-            const signalResult = generateSignal({
-              latestClose,
-              rsi,
-              trend,
-              movingAverage,
-              bands,
-              support,
-              resistance
-            });
-
-            const message =
-              `PAIR: ${formatPair(pair)}\n` +
-              `TIMEFRAME: 1M\n\n` +
-              `Trend: ${trend}\n` +
-              `RSI: ${rsi.toFixed(2)}\n` +
-              `Market State: ${marketState}\n` +
-              `MA(20): ${movingAverage.toFixed(2)}\n` +
-              `BB Upper: ${bands.upper.toFixed(2)}\n` +
-              `BB Lower: ${bands.lower.toFixed(2)}\n` +
-              `Support: ${support.toFixed(2)}\n` +
-              `Resistance: ${resistance.toFixed(2)}\n\n` +
-              `Signal: ${signalResult.signal}\n` +
-              `Confidence: ${signalResult.confidence}%\n` +
-              `Reason: ${signalResult.reason}\n\n` +
-              `Status: Testing signal layer 2.`;
-
-            await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message);
-          }
+          await handleAnalyze(env, chatId, pair);
+        } else if (text === "📘 Help") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "Help:\n\nUse /analyze or tap the buttons below to analyze a pair.\n\nThis bot is still in testing/building mode.",
+            getMainKeyboard()
+          );
+        } else if (text === "⚠️ Risk Tips") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "Risk Tips:\n\n- Do not trade every signal\n- Avoid emotional entries\n- Respect no-signal conditions\n- Never stake money you cannot afford to lose",
+            getMainKeyboard()
+          );
+        } else if (text === "👤 My Status") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            `Your Chat ID: ${chatId}\n\nUser tools are still being built.`,
+            getMainKeyboard()
+          );
         } else {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Bot is live.\n\nUse /start or /analyze"
+            "Bot is live.\n\nUse the buttons below or /analyze",
+            getMainKeyboard()
           );
         }
       }
@@ -88,7 +72,66 @@ export default {
   }
 };
 
+async function handleAnalyze(env, chatId, pair) {
+  const market = await getBinanceCandles(pair, "1m", 30);
+
+  if (!market.ok) {
+    await sendTelegramMessage(
+      env.TELEGRAM_BOT_TOKEN,
+      chatId,
+      `Could not fetch candle data for pair: ${pair}`,
+      getMainKeyboard()
+    );
+    return;
+  }
+
+  const latestClose = market.closes[market.closes.length - 1];
+  const rsi = calculateRSI(market.closes, 14);
+  const trend = detectTrend(market.closes);
+  const marketState = getMarketState(rsi);
+  const movingAverage = calculateSMA(market.closes, 20);
+  const bands = calculateBollingerBands(market.closes, 20, 2);
+  const support = Math.min(...market.lows.slice(-20));
+  const resistance = Math.max(...market.highs.slice(-20));
+
+  const signalResult = generateSignal({
+    latestClose,
+    rsi,
+    trend,
+    movingAverage,
+    bands,
+    support,
+    resistance
+  });
+
+  const message =
+    `PAIR: ${formatPair(pair)}\n` +
+    `TIMEFRAME: 1M\n\n` +
+    `Trend: ${trend}\n` +
+    `RSI: ${rsi.toFixed(2)}\n` +
+    `Market State: ${marketState}\n` +
+    `MA(20): ${movingAverage.toFixed(2)}\n` +
+    `BB Upper: ${bands.upper.toFixed(2)}\n` +
+    `BB Lower: ${bands.lower.toFixed(2)}\n` +
+    `Support: ${support.toFixed(2)}\n` +
+    `Resistance: ${resistance.toFixed(2)}\n\n` +
+    `Signal: ${signalResult.signal}\n` +
+    `Confidence: ${signalResult.confidence}%\n` +
+    `Reason: ${signalResult.reason}\n\n` +
+    `Status: Testing signal layer 2 with UI buttons.`;
+
+  await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getMainKeyboard());
+}
+
 function getRequestedPair(text) {
+  if (text === "₿ BTCUSDT") {
+    return "BTCUSDT";
+  }
+
+  if (text === "Ξ ETHUSDT") {
+    return "ETHUSDT";
+  }
+
   const parts = text.split(" ").filter(Boolean);
 
   if (parts.length < 2) {
@@ -105,6 +148,18 @@ function formatPair(pair) {
   }
 
   return pair;
+}
+
+function getMainKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "📊 Analyze" }, { text: "₿ BTCUSDT" }, { text: "Ξ ETHUSDT" }],
+      [{ text: "📘 Help" }, { text: "⚠️ Risk Tips" }],
+      [{ text: "👤 My Status" }]
+    ],
+    resize_keyboard: true,
+    is_persistent: true
+  };
 }
 
 async function getBinanceCandles(pair, interval = "1m", limit = 30) {
@@ -301,18 +356,24 @@ function average(values) {
   return total / values.length;
 }
 
-async function sendTelegramMessage(token, chatId, text) {
+async function sendTelegramMessage(token, chatId, text, replyMarkup = null) {
   const telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+
+  const payload = {
+    chat_id: chatId,
+    text: text
+  };
+
+  if (replyMarkup) {
+    payload.reply_markup = replyMarkup;
+  }
 
   const response = await fetch(telegramUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text
-    })
+    body: JSON.stringify(payload)
   });
 
   return response;
