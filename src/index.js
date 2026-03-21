@@ -29,6 +29,33 @@ export default {
             `Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.`,
             getKeyboard(isOwner)
           );
+        } else if (isOwner && text.startsWith("/signal ")) {
+          const parsed = parseManualSignal(text);
+
+          if (!parsed.ok) {
+            await sendTelegramMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              "Invalid manual signal format.\n\nUse:\n/signal BUY BTCUSDT 82 Strong setup near support",
+              getKeyboard(isOwner)
+            );
+          } else {
+            const formattedMessage =
+              `📈 MANUAL SIGNAL\n\n` +
+              `PAIR: ${formatPair(parsed.pair)}\n` +
+              `TIMEFRAME: 1M\n\n` +
+              `Signal: ${parsed.signal}\n` +
+              `Confidence: ${parsed.confidence}%\n` +
+              `Reason: ${parsed.reason}\n\n` +
+              `Posted by Owner`;
+
+            await sendTelegramMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              formattedMessage,
+              getKeyboard(isOwner)
+            );
+          }
         } else if (
           text === "/analyze" ||
           text === "📊 Analyze" ||
@@ -91,7 +118,7 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Manual signal posting will be added next.\n\nPlanned format:\n/signal BUY BTCUSDT confidence 82",
+            "Manual signal command is now active.\n\nUse:\n/signal BUY BTCUSDT 82 Strong setup near support",
             getKeyboard(isOwner)
           );
         } else {
@@ -160,6 +187,37 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `Status: Testing signal layer 2 with UI buttons, user tracking, and admin layer.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
+}
+
+function parseManualSignal(text) {
+  const parts = text.split(" ").filter(Boolean);
+
+  if (parts.length < 5) {
+    return { ok: false };
+  }
+
+  const signal = parts[1].toUpperCase();
+  const pair = parts[2].toUpperCase();
+  const confidence = Number(parts[3]);
+  const reason = parts.slice(4).join(" ");
+
+  const validSignals = ["BUY", "SELL", "NO_SIGNAL", "NO-SIGNAL", "NO"];
+
+  if (!validSignals.includes(signal)) {
+    return { ok: false };
+  }
+
+  if (!pair || Number.isNaN(confidence) || confidence < 0 || confidence > 100 || !reason) {
+    return { ok: false };
+  }
+
+  return {
+    ok: true,
+    signal: signal === "NO" ? "NO SIGNAL" : signal.replace("_", " "),
+    pair,
+    confidence,
+    reason
+  };
 }
 
 async function trackUser(env, message) {
