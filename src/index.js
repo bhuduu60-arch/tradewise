@@ -180,6 +180,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
   const support = Math.min(...market.lows.slice(-20));
   const resistance = Math.max(...market.highs.slice(-20));
   const volatility = calculateVolatilityState(market.highs, market.lows, market.closes);
+  const compression = detectCompression(market.highs, market.lows, market.closes);
 
   const signalResult = generateSignal({
     latestClose,
@@ -189,7 +190,8 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     bands,
     support,
     resistance,
-    volatility
+    volatility,
+    compression
   });
 
   const message =
@@ -199,6 +201,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `RSI: ${rsi.toFixed(2)}\n` +
     `Market State: ${marketState}\n` +
     `Volatility: ${volatility.state}\n` +
+    `Compression: ${compression.isCompressed ? "Yes" : "No"}\n` +
     `MA(20): ${movingAverage.toFixed(2)}\n` +
     `BB Upper: ${bands.upper.toFixed(2)}\n` +
     `BB Middle: ${bands.middle.toFixed(2)}\n` +
@@ -208,7 +211,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `Signal: ${signalResult.signal}\n` +
     `Confidence: ${signalResult.confidence}%\n` +
     `Reason: ${signalResult.reason}\n\n` +
-    `Status: Testing safer signal layer with volatility filter.`;
+    `Status: Testing safer signal layer with volatility + compression filter.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
@@ -560,7 +563,9 @@ function calculateVolatilityState(highs, lows, closes) {
     return { state: "Normal", ratio: 0 };
   }
 
-  const recentRanges = highs.slice(-10).map((high, index) => high - lows.slice(-10)[index]);
+  const recentHighs = highs.slice(-10);
+  const recentLows = lows.slice(-10);
+  const recentRanges = recentHighs.map((high, index) => high - recentLows[index]);
   const averageRange = average(recentRanges);
   const latestClose = closes[closes.length - 1];
   const rangeRatio = latestClose > 0 ? averageRange / latestClose : 0;
@@ -576,8 +581,26 @@ function calculateVolatilityState(highs, lows, closes) {
   return { state: "Normal", ratio: rangeRatio };
 }
 
+function detectCompression(highs, lows, closes) {
+  if (!highs || !lows || !closes || closes.length < 20) {
+    return { isCompressed: false, ratio: 0 };
+  }
+
+  const recentHighs = highs.slice(-8);
+  const recentLows = lows.slice(-8);
+  const recentMax = Math.max(...recentHighs);
+  const recentMin = Math.min(...recentLows);
+  const latestClose = closes[closes.length - 1];
+  const compressionRatio = latestClose > 0 ? (recentMax - recentMin) / latestClose : 0;
+
+  return {
+    isCompressed: compressionRatio < 0.0018,
+    ratio: compressionRatio
+  };
+}
+
 function generateSignal(data) {
-  const { latestClose, rsi, trend, bands, support, resistance, volatility } = data;
+  const { latestClose, rsi, trend, bands, support, resistance, volatility, compression } = data;
 
   const bandRange = bands.upper - bands.lower || 1;
   const middleDistanceRatio = Math.abs(latestClose - bands.middle) / bandRange;
@@ -600,6 +623,14 @@ function generateSignal(data) {
       signal: "NO SIGNAL",
       confidence: 30,
       reason: "Volatility is too low. Market is too compressed for a safer entry."
+    };
+  }
+
+  if (compression.isCompressed && trend === "Sideways") {
+    return {
+      signal: "NO SIGNAL",
+      confidence: 33,
+      reason: "Market is in compression with sideways behavior. Better to wait for clearer expansion."
     };
   }
 
@@ -654,6 +685,11 @@ function generateSignal(data) {
   if (signal !== "NO SIGNAL" && volatility.state === "High") {
     confidence -= 10;
     reason += " Volatility is high, so confidence is reduced.";
+  }
+
+  if (signal !== "NO SIGNAL" && compression.isCompressed) {
+    confidence -= 8;
+    reason += " Compression is still present, so breakout confirmation is weak.";
   }
 
   if (signal === "NO SIGNAL" && neutralRSI) {
