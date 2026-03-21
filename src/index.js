@@ -18,6 +18,7 @@ export default {
         const message = update.message;
         const chatId = message.chat.id;
         const text = (message.text || "").trim();
+        const lowerText = text.toLowerCase();
         const isOwner = String(chatId) === String(env.OWNER_TELEGRAM_ID);
 
         await trackUser(env, message);
@@ -89,7 +90,7 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "🧠 Tradewise Help Assistant\n\nAsk a trading help question like:\n- What is RSI?\n- What does NO SIGNAL mean?\n- When should I avoid trading?\n- What is volatility?\n- What is compression?\n\nThis help assistant is now being built in testing mode.",
+            "🧠 Tradewise Help Assistant\n\nAsk a trading help question like:\n- What is RSI?\n- What does NO SIGNAL mean?\n- When should I avoid trading?\n- What is volatility?\n- What is compression?\n- What is confidence?\n- What is support and resistance?",
             getKeyboard(isOwner)
           );
         } else if (text === "📘 Help") {
@@ -149,12 +150,23 @@ export default {
             getKeyboard(isOwner)
           );
         } else {
-          await sendTelegramMessage(
-            env.TELEGRAM_BOT_TOKEN,
-            chatId,
-            "Bot is live.\n\nUse the buttons below or /analyze",
-            getKeyboard(isOwner)
-          );
+          const helpReply = getHelpAnswer(lowerText);
+
+          if (helpReply) {
+            await sendTelegramMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              helpReply,
+              getKeyboard(isOwner)
+            );
+          } else {
+            await sendTelegramMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              "Bot is live.\n\nUse the buttons below or /analyze\n\nIf you want help, tap 🧠 Ask AI and ask a trading question.",
+              getKeyboard(isOwner)
+            );
+          }
         }
       }
 
@@ -223,6 +235,46 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `Status: Testing polished signal output.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
+}
+
+function getHelpAnswer(text) {
+  if (text.includes("what is rsi") || text === "rsi" || text.includes("meaning of rsi")) {
+    return "RSI means Relative Strength Index.\n\nIt helps show whether price is relatively overstretched.\n- RSI below 30 can suggest oversold pressure\n- RSI above 70 can suggest overbought pressure\n\nRSI alone is not enough. It should be combined with trend and price location.";
+  }
+
+  if (text.includes("no signal") || text.includes("what does no signal mean")) {
+    return "NO SIGNAL means the bot does not see a safer edge right now.\n\nThat is a good thing, not a bad thing.\nIt helps reduce random entries and overtrading.";
+  }
+
+  if (text.includes("avoid trading") || text.includes("when should i avoid trading")) {
+    return "Avoid trading when:\n- the bot says NO SIGNAL\n- RSI is neutral and trend is sideways\n- volatility is too low\n- compression is tight without clear breakout\n- you feel emotional or rushed";
+  }
+
+  if (text.includes("volatility")) {
+    return "Volatility shows how much price is moving.\n\n- Low volatility can mean the market is too flat\n- High volatility can mean the market is noisy or risky\n\nThe bot uses volatility to reduce weak or messy setups.";
+  }
+
+  if (text.includes("compression")) {
+    return "Compression means price is squeezing into a tighter range.\n\nThis often means the market is storing energy, but direction may still be unclear.\nThe bot usually becomes more careful during compression.";
+  }
+
+  if (text.includes("confidence")) {
+    return "Confidence is the bot's strength estimate for a setup.\n\nHigher confidence means more conditions aligned.\nBut confidence is not a guarantee. It is only a decision aid.";
+  }
+
+  if (text.includes("support") || text.includes("resistance")) {
+    return "Support is an area where price may react upward.\nResistance is an area where price may react downward.\n\nThe bot checks these zones to avoid entering blindly into barriers.";
+  }
+
+  if (text.includes("bollinger") || text.includes("band")) {
+    return "Bollinger Bands help show whether price is stretched away from its recent average.\n\n- Near lower band may support BUY setups\n- Near upper band may support SELL setups\n\nThe bot combines this with RSI and trend.";
+  }
+
+  if (text.includes("trend")) {
+    return "Trend tells whether price is generally pushing up, down, or sideways.\n\nThe bot avoids taking reversal signals directly against a strong trend when possible.";
+  }
+
+  return null;
 }
 
 function parseManualSignal(text) {
