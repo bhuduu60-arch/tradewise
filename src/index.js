@@ -27,7 +27,7 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.`,
+            `👋 Welcome to Tradewise Bot\n\nUse this bot for safer market analysis signals.`,
             getKeyboard(isOwner)
           );
         } else if (isOwner && text.startsWith("/broadcast ")) {
@@ -37,7 +37,7 @@ export default {
             await sendTelegramMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              "Broadcast message cannot be empty.\n\nUse:\n/broadcast Your message here",
+              "📢 Broadcast message cannot be empty.\n\nUse:\n/broadcast Your message here",
               getKeyboard(isOwner)
             );
           } else {
@@ -46,7 +46,7 @@ export default {
             await sendTelegramMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              `📢 Broadcast Complete\n\nSent: ${result.sent}\nFailed: ${result.failed}`,
+              `📢 Broadcast Complete\n\n✅ Sent: ${result.sent}\n❌ Failed: ${result.failed}`,
               getKeyboard(isOwner)
             );
           }
@@ -57,18 +57,18 @@ export default {
             await sendTelegramMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              "Invalid manual signal format.\n\nUse:\n/signal BUY BTCUSDT 82 Strong setup near support",
+              "⚠️ Invalid manual signal format.\n\nUse:\n/signal BUY BTCUSDT 82 Strong setup near support",
               getKeyboard(isOwner)
             );
           } else {
             const formattedMessage =
               `📈 MANUAL SIGNAL\n\n` +
-              `PAIR: ${formatPair(parsed.pair)}\n` +
-              `TIMEFRAME: 1M\n\n` +
-              `Signal: ${parsed.signal}\n` +
-              `Confidence: ${parsed.confidence}%\n` +
-              `Reason: ${parsed.reason}\n\n` +
-              `Posted by Owner`;
+              `💱 Pair: ${formatPair(parsed.pair)}\n` +
+              `⏱ Timeframe: 1M\n\n` +
+              `📌 Signal: ${parsed.signal}\n` +
+              `🎯 Confidence: ${parsed.confidence}%\n` +
+              `📝 Reason: ${parsed.reason}\n\n` +
+              `👑 Posted by Owner`;
 
             await sendTelegramMessage(
               env.TELEGRAM_BOT_TOKEN,
@@ -97,21 +97,21 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Returned to main menu.",
+            "⬅️ Returned to main menu.",
             getKeyboard(isOwner)
           );
         } else if (text === "📘 Help") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Help:\n\nUse /analyze or tap the buttons below to analyze a pair.\n\nThis bot is still in testing/building mode.",
+            "📘 Help\n\nUse /analyze or tap the buttons below to analyze a pair.\n\nThis bot is still in testing/building mode.",
             getKeyboard(isOwner)
           );
         } else if (text === "⚠️ Risk Tips") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Risk Tips:\n\n- Do not trade every signal\n- Avoid emotional entries\n- Respect no-signal conditions\n- Never stake money you cannot afford to lose",
+            "⚠️ Risk Tips\n\n- Do not trade every signal\n- Avoid emotional entries\n- Respect no-signal conditions\n- Never stake money you cannot afford to lose",
             getKeyboard(isOwner)
           );
         } else if (text === "👤 My Status") {
@@ -120,11 +120,11 @@ export default {
           const lastSeen = userData?.last_seen || "unknown";
 
           let statusMessage =
-            `Your Chat ID: ${chatId}\nFirst Seen: ${firstSeen}\nLast Seen: ${lastSeen}\n\nUser tracking is active.`;
+            `👤 Your Status\n\n🆔 Chat ID: ${chatId}\n🕒 First Seen: ${firstSeen}\n🕘 Last Seen: ${lastSeen}\n\n✅ User tracking is active.`;
 
           if (isOwner) {
             const totalUsers = await getUserCount(env);
-            statusMessage += `\n\nOwner View:\nTotal Users: ${totalUsers}`;
+            statusMessage += `\n\n👑 Owner View\n👥 Total Users: ${totalUsers}`;
           }
 
           await sendTelegramMessage(
@@ -139,21 +139,21 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `Owner Admin Panel\n\nTotal Users: ${stats.totalUsers}\nActive (24h): ${stats.active24h}\nOwner ID: ${env.OWNER_TELEGRAM_ID}\nMode: Testing / Admin Layer Active`,
+            `👥 Owner Admin Panel\n\n👤 Total Users: ${stats.totalUsers}\n🕒 Active (24h): ${stats.active24h}\n🆔 Owner ID: ${env.OWNER_TELEGRAM_ID}\n🛠 Mode: Testing / Admin Layer Active`,
             getKeyboard(isOwner)
           );
         } else if (isOwner && text === "📢 Broadcast") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Broadcast command is now active.\n\nUse:\n/broadcast Your message here",
+            "📢 Broadcast command is active.\n\nUse:\n/broadcast Your message here",
             getKeyboard(isOwner)
           );
         } else if (isOwner && text === "📈 Drop Signal") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "Manual signal command is now active.\n\nUse:\n/signal BUY BTCUSDT 82 Strong setup near support",
+            "📈 Manual signal command is active.\n\nUse:\n/signal BUY BTCUSDT 82 Strong setup near support",
             getKeyboard(isOwner)
           );
         } else {
@@ -171,7 +171,7 @@ export default {
             await sendTelegramMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              "Bot is live.\n\nUse the buttons below or /analyze\n\nIf you want help, tap 🧠 Ask AI and ask a trading question.",
+              "🤖 Bot is live.\n\nUse the buttons below or /analyze.\n\nIf you want help, tap 🧠 Ask AI.",
               getKeyboard(isOwner)
             );
           }
@@ -192,7 +192,7 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     await sendTelegramMessage(
       env.TELEGRAM_BOT_TOKEN,
       chatId,
-      `Could not fetch candle data for pair: ${pair}`,
+      `⚠️ Could not fetch candle data for pair: ${pair}`,
       getKeyboard(isOwner)
     );
     return;
@@ -222,64 +222,65 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
   });
 
   const message =
-    `PAIR: ${formatPair(pair)}\n` +
-    `TIMEFRAME: 1M\n\n` +
-    `Trend: ${trend}\n` +
-    `RSI: ${rsi.toFixed(2)}\n` +
-    `Market State: ${marketState}\n` +
-    `Volatility: ${volatility.state}\n` +
-    `Compression: ${compression.isCompressed ? "Yes" : "No"}\n\n` +
-    `Signal: ${signalResult.signal}\n` +
-    `Quality: ${signalResult.quality}\n` +
-    `Confidence: ${signalResult.confidence}%\n` +
-    `Reason: ${signalResult.reason}\n\n` +
-    `Support: ${support.toFixed(2)}\n` +
-    `Resistance: ${resistance.toFixed(2)}\n` +
-    `MA(20): ${movingAverage.toFixed(2)}\n` +
-    `BB Upper: ${bands.upper.toFixed(2)}\n` +
-    `BB Middle: ${bands.middle.toFixed(2)}\n` +
-    `BB Lower: ${bands.lower.toFixed(2)}\n\n` +
-    `Note: Safer setups are preferred. Avoid forcing entries when the bot says NO SIGNAL.\n\n` +
-    `Status: Testing polished signal output.`;
+    `📊 TRADEWISE ANALYSIS\n\n` +
+    `💱 Pair: ${formatPair(pair)}\n` +
+    `⏱ Timeframe: 1M\n\n` +
+    `📈 Trend: ${trend}\n` +
+    `📍 Market State: ${marketState}\n` +
+    `📉 RSI: ${rsi.toFixed(2)}\n` +
+    `🌪 Volatility: ${volatility.state}\n` +
+    `🗜 Compression: ${compression.isCompressed ? "Yes" : "No"}\n\n` +
+    `📌 Signal: ${signalResult.signal}\n` +
+    `🏷 Quality: ${signalResult.quality}\n` +
+    `🎯 Confidence: ${signalResult.confidence}%\n` +
+    `📝 Reason: ${signalResult.reason}\n\n` +
+    `🛡 Support: ${support.toFixed(2)}\n` +
+    `🚧 Resistance: ${resistance.toFixed(2)}\n` +
+    `📊 MA(20): ${movingAverage.toFixed(2)}\n` +
+    `🔼 BB Upper: ${bands.upper.toFixed(2)}\n` +
+    `➖ BB Middle: ${bands.middle.toFixed(2)}\n` +
+    `🔽 BB Lower: ${bands.lower.toFixed(2)}\n\n` +
+    `⚠️ Safer setups are preferred. If the bot says NO SIGNAL, avoid forcing entry.\n\n` +
+    `🧪 Status: Testing polished signal output.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
 
 function getHelpAnswer(text) {
   if (text.includes("what is rsi") || text === "rsi" || text.includes("meaning of rsi")) {
-    return "RSI means Relative Strength Index.\n\nIt helps show whether price is relatively overstretched.\n- RSI below 30 can suggest oversold pressure\n- RSI above 70 can suggest overbought pressure\n\nRSI alone is not enough. It should be combined with trend and price location.";
+    return "📉 RSI means Relative Strength Index.\n\nIt helps show whether price is relatively overstretched.\n- Below 30 can suggest oversold pressure\n- Above 70 can suggest overbought pressure\n\n⚠️ RSI alone is not enough. It should be combined with trend and price location.";
   }
 
   if (text.includes("no signal") || text.includes("what does no signal mean")) {
-    return "NO SIGNAL means the bot does not see a safer edge right now.\n\nThat is a good thing, not a bad thing.\nIt helps reduce random entries and overtrading.";
+    return "🚫 NO SIGNAL means the bot does not see a safer edge right now.\n\nThat is a good thing, not a bad thing.\nIt helps reduce random entries and overtrading.";
   }
 
   if (text.includes("avoid trading") || text.includes("when should i avoid trading")) {
-    return "Avoid trading when:\n- the bot says NO SIGNAL\n- RSI is neutral and trend is sideways\n- volatility is too low\n- compression is tight without clear breakout\n- you feel emotional or rushed";
+    return "⚠️ Avoid trading when:\n- the bot says NO SIGNAL\n- RSI is neutral and trend is sideways\n- volatility is too low\n- compression is tight without clear breakout\n- you feel emotional or rushed";
   }
 
   if (text.includes("volatility")) {
-    return "Volatility shows how much price is moving.\n\n- Low volatility can mean the market is too flat\n- High volatility can mean the market is noisy or risky\n\nThe bot uses volatility to reduce weak or messy setups.";
+    return "🌪 Volatility shows how much price is moving.\n\n- Low volatility can mean the market is too flat\n- High volatility can mean the market is noisy or risky\n\nThe bot uses volatility to reduce weak or messy setups.";
   }
 
   if (text.includes("compression")) {
-    return "Compression means price is squeezing into a tighter range.\n\nThis often means the market is storing energy, but direction may still be unclear.\nThe bot usually becomes more careful during compression.";
+    return "🗜 Compression means price is squeezing into a tighter range.\n\nThis often means the market is storing energy, but direction may still be unclear.\nThe bot usually becomes more careful during compression.";
   }
 
   if (text.includes("confidence")) {
-    return "Confidence is the bot's strength estimate for a setup.\n\nHigher confidence means more conditions aligned.\nBut confidence is not a guarantee. It is only a decision aid.";
+    return "🎯 Confidence is the bot's strength estimate for a setup.\n\nHigher confidence means more conditions aligned.\nBut confidence is not a guarantee. It is only a decision aid.";
   }
 
   if (text.includes("support") || text.includes("resistance")) {
-    return "Support is an area where price may react upward.\nResistance is an area where price may react downward.\n\nThe bot checks these zones to avoid entering blindly into barriers.";
+    return "🛡 Support is an area where price may react upward.\n🚧 Resistance is an area where price may react downward.\n\nThe bot checks these zones to avoid entering blindly into barriers.";
   }
 
   if (text.includes("bollinger") || text.includes("band")) {
-    return "Bollinger Bands help show whether price is stretched away from its recent average.\n\n- Near lower band may support BUY setups\n- Near upper band may support SELL setups\n\nThe bot combines this with RSI and trend.";
+    return "📊 Bollinger Bands help show whether price is stretched away from its recent average.\n\n- Near lower band may support BUY setups\n- Near upper band may support SELL setups\n\nThe bot combines this with RSI and trend.";
   }
 
   if (text.includes("trend")) {
-    return "Trend tells whether price is generally pushing up, down, or sideways.\n\nThe bot avoids taking reversal signals directly against a strong trend when possible.";
+    return "📈 Trend tells whether price is generally pushing up, down, or sideways.\n\nThe bot avoids taking reversal signals directly against a strong trend when possible.";
   }
 
   return null;
