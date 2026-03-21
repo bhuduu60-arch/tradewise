@@ -18,6 +18,7 @@ export default {
         const message = update.message;
         const chatId = message.chat.id;
         const text = (message.text || "").trim();
+        const isOwner = String(chatId) === String(env.OWNER_TELEGRAM_ID);
 
         await trackUser(env, message);
 
@@ -26,7 +27,7 @@ export default {
             env.TELEGRAM_BOT_TOKEN,
             chatId,
             `Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.`,
-            getMainKeyboard()
+            getKeyboard(isOwner)
           );
         } else if (
           text === "/analyze" ||
@@ -36,26 +37,25 @@ export default {
           text.startsWith("/analyze ")
         ) {
           const pair = getRequestedPair(text);
-          await handleAnalyze(env, chatId, pair);
+          await handleAnalyze(env, chatId, pair, isOwner);
         } else if (text === "📘 Help") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
             "Help:\n\nUse /analyze or tap the buttons below to analyze a pair.\n\nThis bot is still in testing/building mode.",
-            getMainKeyboard()
+            getKeyboard(isOwner)
           );
         } else if (text === "⚠️ Risk Tips") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
             "Risk Tips:\n\n- Do not trade every signal\n- Avoid emotional entries\n- Respect no-signal conditions\n- Never stake money you cannot afford to lose",
-            getMainKeyboard()
+            getKeyboard(isOwner)
           );
         } else if (text === "👤 My Status") {
           const userData = await getUserData(env, chatId);
           const firstSeen = userData?.first_seen || "unknown";
           const lastSeen = userData?.last_seen || "unknown";
-          const isOwner = String(chatId) === String(env.OWNER_TELEGRAM_ID);
 
           let statusMessage =
             `Your Chat ID: ${chatId}\nFirst Seen: ${firstSeen}\nLast Seen: ${lastSeen}\n\nUser tracking is active.`;
@@ -69,14 +69,37 @@ export default {
             env.TELEGRAM_BOT_TOKEN,
             chatId,
             statusMessage,
-            getMainKeyboard()
+            getKeyboard(isOwner)
+          );
+        } else if (isOwner && text === "👥 User Stats") {
+          const totalUsers = await getUserCount(env);
+
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            `Owner Admin Panel\n\nTotal Users: ${totalUsers}\n\nMore admin stats will be added next.`,
+            getKeyboard(isOwner)
+          );
+        } else if (isOwner && text === "📢 Broadcast") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "Broadcast mode will be added next.\n\nPlanned format:\n/broadcast your message here",
+            getKeyboard(isOwner)
+          );
+        } else if (isOwner && text === "📈 Drop Signal") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "Manual signal posting will be added next.\n\nPlanned format:\n/signal BUY BTCUSDT confidence 82",
+            getKeyboard(isOwner)
           );
         } else {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
             "Bot is live.\n\nUse the buttons below or /analyze",
-            getMainKeyboard()
+            getKeyboard(isOwner)
           );
         }
       }
@@ -88,7 +111,7 @@ export default {
   }
 };
 
-async function handleAnalyze(env, chatId, pair) {
+async function handleAnalyze(env, chatId, pair, isOwner) {
   const market = await getBinanceCandles(pair, "1m", 30);
 
   if (!market.ok) {
@@ -96,7 +119,7 @@ async function handleAnalyze(env, chatId, pair) {
       env.TELEGRAM_BOT_TOKEN,
       chatId,
       `Could not fetch candle data for pair: ${pair}`,
-      getMainKeyboard()
+      getKeyboard(isOwner)
     );
     return;
   }
@@ -134,9 +157,9 @@ async function handleAnalyze(env, chatId, pair) {
     `Signal: ${signalResult.signal}\n` +
     `Confidence: ${signalResult.confidence}%\n` +
     `Reason: ${signalResult.reason}\n\n` +
-    `Status: Testing signal layer 2 with UI buttons and user tracking.`;
+    `Status: Testing signal layer 2 with UI buttons, user tracking, and admin layer.`;
 
-  await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getMainKeyboard());
+  await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
 
 async function trackUser(env, message) {
@@ -221,13 +244,20 @@ function formatPair(pair) {
   return pair;
 }
 
-function getMainKeyboard() {
+function getKeyboard(isOwner = false) {
+  const keyboard = [
+    [{ text: "📊 Analyze" }, { text: "₿ BTCUSDT" }, { text: "Ξ ETHUSDT" }],
+    [{ text: "📘 Help" }, { text: "⚠️ Risk Tips" }],
+    [{ text: "👤 My Status" }]
+  ];
+
+  if (isOwner) {
+    keyboard.push([{ text: "👥 User Stats" }, { text: "📢 Broadcast" }]);
+    keyboard.push([{ text: "📈 Drop Signal" }]);
+  }
+
   return {
-    keyboard: [
-      [{ text: "📊 Analyze" }, { text: "₿ BTCUSDT" }, { text: "Ξ ETHUSDT" }],
-      [{ text: "📘 Help" }, { text: "⚠️ Risk Tips" }],
-      [{ text: "👤 My Status" }]
-    ],
+    keyboard,
     resize_keyboard: true,
     is_persistent: true
   };
