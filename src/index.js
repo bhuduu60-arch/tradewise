@@ -373,6 +373,10 @@ async function getDetailedUserStats(env) {
 }
 
 function getRequestedPair(text) {
+  if (text === "📊 Analyze" || text === "/analyze") {
+    return "BTCUSDT";
+  }
+
   if (text === "₿ BTCUSDT") {
     return "BTCUSDT";
   }
