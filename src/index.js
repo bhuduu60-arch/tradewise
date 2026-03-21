@@ -39,6 +39,8 @@ export default {
             const rsi = calculateRSI(market.closes, 14);
             const trend = detectTrend(market.closes);
             const marketState = getMarketState(rsi);
+            const movingAverage = calculateSMA(market.closes, 20);
+            const bands = calculateBollingerBands(market.closes, 20, 2);
 
             const message =
               `PAIR: ${formatPair(pair)}\n` +
@@ -46,8 +48,11 @@ export default {
               `Latest Close: ${latestClose}\n` +
               `RSI: ${rsi.toFixed(2)}\n` +
               `Trend: ${trend}\n` +
-              `Market State: ${marketState}\n\n` +
-              `Status: Testing analysis layer 1 (RSI + trend + market state).`;
+              `Market State: ${marketState}\n` +
+              `MA(20): ${movingAverage.toFixed(2)}\n` +
+              `BB Upper: ${bands.upper.toFixed(2)}\n` +
+              `BB Lower: ${bands.lower.toFixed(2)}\n\n` +
+              `Status: Testing analysis layer 2 (RSI + trend + MA + Bollinger).`;
 
             await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message);
           }
@@ -182,6 +187,38 @@ function getMarketState(rsi) {
   }
 
   return "Neutral";
+}
+
+function calculateSMA(values, period = 20) {
+  if (!values || values.length < period) {
+    return values[values.length - 1] || 0;
+  }
+
+  const recent = values.slice(-period);
+  return average(recent);
+}
+
+function calculateBollingerBands(values, period = 20, multiplier = 2) {
+  if (!values || values.length < period) {
+    const fallback = values[values.length - 1] || 0;
+    return {
+      upper: fallback,
+      middle: fallback,
+      lower: fallback
+    };
+  }
+
+  const recent = values.slice(-period);
+  const middle = average(recent);
+  const variance =
+    recent.reduce((sum, value) => sum + Math.pow(value - middle, 2), 0) / period;
+  const standardDeviation = Math.sqrt(variance);
+
+  return {
+    upper: middle + multiplier * standardDeviation,
+    middle,
+    lower: middle - multiplier * standardDeviation
+  };
 }
 
 function average(values) {
