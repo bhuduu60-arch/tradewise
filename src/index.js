@@ -201,17 +201,19 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `RSI: ${rsi.toFixed(2)}\n` +
     `Market State: ${marketState}\n` +
     `Volatility: ${volatility.state}\n` +
-    `Compression: ${compression.isCompressed ? "Yes" : "No"}\n` +
+    `Compression: ${compression.isCompressed ? "Yes" : "No"}\n\n` +
+    `Signal: ${signalResult.signal}\n` +
+    `Quality: ${signalResult.quality}\n` +
+    `Confidence: ${signalResult.confidence}%\n` +
+    `Reason: ${signalResult.reason}\n\n` +
+    `Support: ${support.toFixed(2)}\n` +
+    `Resistance: ${resistance.toFixed(2)}\n` +
     `MA(20): ${movingAverage.toFixed(2)}\n` +
     `BB Upper: ${bands.upper.toFixed(2)}\n` +
     `BB Middle: ${bands.middle.toFixed(2)}\n` +
-    `BB Lower: ${bands.lower.toFixed(2)}\n` +
-    `Support: ${support.toFixed(2)}\n` +
-    `Resistance: ${resistance.toFixed(2)}\n\n` +
-    `Signal: ${signalResult.signal}\n` +
-    `Confidence: ${signalResult.confidence}%\n` +
-    `Reason: ${signalResult.reason}\n\n` +
-    `Status: Testing safer signal layer with volatility + compression filter.`;
+    `BB Lower: ${bands.lower.toFixed(2)}\n\n` +
+    `Note: Safer setups are preferred. Avoid forcing entries when the bot says NO SIGNAL.\n\n` +
+    `Status: Testing polished signal output.`;
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
@@ -599,6 +601,22 @@ function detectCompression(highs, lows, closes) {
   };
 }
 
+function getSignalQuality(signal, confidence) {
+  if (signal === "NO SIGNAL") {
+    return "Avoid";
+  }
+
+  if (confidence >= 85) {
+    return "Strong";
+  }
+
+  if (confidence >= 70) {
+    return "Moderate";
+  }
+
+  return "Weak";
+}
+
 function generateSignal(data) {
   const { latestClose, rsi, trend, bands, support, resistance, volatility, compression } = data;
 
@@ -622,6 +640,7 @@ function generateSignal(data) {
     return {
       signal: "NO SIGNAL",
       confidence: 30,
+      quality: "Avoid",
       reason: "Volatility is too low. Market is too compressed for a safer entry."
     };
   }
@@ -630,6 +649,7 @@ function generateSignal(data) {
     return {
       signal: "NO SIGNAL",
       confidence: 33,
+      quality: "Avoid",
       reason: "Market is in compression with sideways behavior. Better to wait for clearer expansion."
     };
   }
@@ -638,6 +658,7 @@ function generateSignal(data) {
     return {
       signal: "NO SIGNAL",
       confidence: 35,
+      quality: "Avoid",
       reason: "Price is near the middle band with neutral RSI and sideways trend. No clear edge."
     };
   }
@@ -708,6 +729,7 @@ function generateSignal(data) {
   return {
     signal,
     confidence,
+    quality: getSignalQuality(signal, confidence),
     reason
   };
 }
