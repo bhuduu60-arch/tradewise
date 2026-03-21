@@ -72,12 +72,12 @@ export default {
             getKeyboard(isOwner)
           );
         } else if (isOwner && text === "👥 User Stats") {
-          const totalUsers = await getUserCount(env);
+          const stats = await getDetailedUserStats(env);
 
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `Owner Admin Panel\n\nTotal Users: ${totalUsers}\n\nMore admin stats will be added next.`,
+            `Owner Admin Panel\n\nTotal Users: ${stats.totalUsers}\nActive (24h): ${stats.active24h}\nOwner ID: ${env.OWNER_TELEGRAM_ID}\nMode: Testing / Admin Layer Active`,
             getKeyboard(isOwner)
           );
         } else if (isOwner && text === "📢 Broadcast") {
@@ -215,6 +215,42 @@ async function getUserData(env, chatId) {
   }
 
   return JSON.parse(raw);
+}
+
+async function getDetailedUserStats(env) {
+  if (!env.USERS_KV) {
+    return {
+      totalUsers: 0,
+      active24h: 0
+    };
+  }
+
+  const list = await env.USERS_KV.list({ prefix: "user:" });
+  const now = Date.now();
+  let active24h = 0;
+
+  for (const key of list.keys) {
+    const raw = await env.USERS_KV.get(key.name);
+
+    if (!raw) {
+      continue;
+    }
+
+    const user = JSON.parse(raw);
+    const lastSeenTime = new Date(user.last_seen).getTime();
+
+    if (!Number.isNaN(lastSeenTime)) {
+      const hoursSinceSeen = (now - lastSeenTime) / (1000 * 60 * 60);
+      if (hoursSinceSeen <= 24) {
+        active24h += 1;
+      }
+    }
+  }
+
+  return {
+    totalUsers: list.keys.length,
+    active24h
+  };
 }
 
 function getRequestedPair(text) {
