@@ -90,7 +90,14 @@ export default {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            "🧠 Tradewise Help Assistant\n\nAsk a trading help question like:\n- What is RSI?\n- What does NO SIGNAL mean?\n- When should I avoid trading?\n- What is volatility?\n- What is compression?\n- What is confidence?\n- What is support and resistance?",
+            "🧠 Tradewise Help Assistant\n\nChoose a question below or type your own trading help question.",
+            getAIKeyboard()
+          );
+        } else if (text === "⬅️ Back to Main") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "Returned to main menu.",
             getKeyboard(isOwner)
           );
         } else if (text === "📘 Help") {
@@ -153,11 +160,12 @@ export default {
           const helpReply = getHelpAnswer(lowerText);
 
           if (helpReply) {
+            const useAIKeyboard = isAIQuestion(text);
             await sendTelegramMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
               helpReply,
-              getKeyboard(isOwner)
+              useAIKeyboard ? getAIKeyboard() : getKeyboard(isOwner)
             );
           } else {
             await sendTelegramMessage(
@@ -275,6 +283,20 @@ function getHelpAnswer(text) {
   }
 
   return null;
+}
+
+function isAIQuestion(text) {
+  const aiQuestions = [
+    "What is RSI?",
+    "What does NO SIGNAL mean?",
+    "When should I avoid trading?",
+    "What is volatility?",
+    "What is compression?",
+    "What is confidence?",
+    "What is support and resistance?"
+  ];
+
+  return aiQuestions.includes(text);
 }
 
 function parseManualSignal(text) {
@@ -484,6 +506,20 @@ function getKeyboard(isOwner = false) {
 
   return {
     keyboard,
+    resize_keyboard: true,
+    is_persistent: true
+  };
+}
+
+function getAIKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "What is RSI?" }, { text: "What does NO SIGNAL mean?" }],
+      [{ text: "When should I avoid trading?" }, { text: "What is volatility?" }],
+      [{ text: "What is compression?" }, { text: "What is confidence?" }],
+      [{ text: "What is support and resistance?" }],
+      [{ text: "⬅️ Back to Main" }]
+    ],
     resize_keyboard: true,
     is_persistent: true
   };
