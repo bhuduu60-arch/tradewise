@@ -22,12 +22,10 @@ export default {
         await trackUser(env, message);
 
         if (text === "/start") {
-          const totalUsers = await getUserCount(env);
-
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.\n\nTotal Users: ${totalUsers}`,
+            `Welcome to Tradewise Bot.\n\nUse this bot for safer market analysis signals.`,
             getMainKeyboard()
           );
         } else if (
@@ -54,16 +52,23 @@ export default {
             getMainKeyboard()
           );
         } else if (text === "👤 My Status") {
-          const totalUsers = await getUserCount(env);
           const userData = await getUserData(env, chatId);
-
           const firstSeen = userData?.first_seen || "unknown";
           const lastSeen = userData?.last_seen || "unknown";
+          const isOwner = String(chatId) === String(env.OWNER_TELEGRAM_ID);
+
+          let statusMessage =
+            `Your Chat ID: ${chatId}\nFirst Seen: ${firstSeen}\nLast Seen: ${lastSeen}\n\nUser tracking is active.`;
+
+          if (isOwner) {
+            const totalUsers = await getUserCount(env);
+            statusMessage += `\n\nOwner View:\nTotal Users: ${totalUsers}`;
+          }
 
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
-            `Your Chat ID: ${chatId}\nFirst Seen: ${firstSeen}\nLast Seen: ${lastSeen}\n\nTotal Users: ${totalUsers}\n\nUser tracking is now active (testing mode).`,
+            statusMessage,
             getMainKeyboard()
           );
         } else {
