@@ -63,8 +63,8 @@ export default {
           } else {
             const formattedMessage =
               `📈 MANUAL SIGNAL\n\n` +
-              `💱 Pair: ${formatPair(parsed.pair)}\n` +
-              `⏱ Timeframe: 1M\n\n` +
+              `💱 Asset: ${formatPair(parsed.pair)}\n` +
+              `⏱ Expiry: 2m\n\n` +
               `📌 Signal: ${parsed.signal}\n` +
               `🎯 Confidence: ${parsed.confidence}%\n` +
               `📝 Reason: ${parsed.reason}\n\n` +
@@ -209,14 +209,14 @@ function sleep(ms) {
 }
 
 async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
-  const market1m = await getBinanceCandles(pair, "1m", 30);
-  const market5m = await getBinanceCandles(pair, "5m", 30);
+  const market1m = await getBinanceCandles(pair, "1m", 40);
+  const market5m = await getBinanceCandles(pair, "5m", 40);
 
   if (!market1m.ok || !market5m.ok) {
     await sendTelegramMessage(
       env.TELEGRAM_BOT_TOKEN,
       chatId,
-      `⚠️ Could not fetch candle data for pair: ${pair}`,
+      `⚠️ Could not fetch candle data for asset: ${pair}`,
       getKeyboard(isOwner)
     );
     return;
@@ -224,6 +224,7 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
 
   const latestClose = market1m.closes[market1m.closes.length - 1];
   const rsi = calculateRSI(market1m.closes, 14);
+  const rsiSlope = calculateRSISlope(market1m.closes, 14);
   const trend = detectTrend(market1m.closes);
   const higherTrend = detectTrend(market5m.closes);
   const marketState = getMarketState(rsi);
@@ -234,11 +235,13 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
   const volatility = calculateVolatilityState(market1m.highs, market1m.lows, market1m.closes);
   const compression = detectCompression(market1m.highs, market1m.lows, market1m.closes);
   const momentum = detectMomentumBurst(market1m.closes);
+  const candleBias = detectRecentCandleBias(market1m.closes);
 
   const signalResult = forceSignal
     ? generateForcedSignal({
         latestClose,
         rsi,
+        rsiSlope,
         trend,
         higherTrend,
         bands,
@@ -246,11 +249,13 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
         resistance,
         volatility,
         compression,
-        momentum
+        momentum,
+        candleBias
       })
     : generateSignal({
         latestClose,
         rsi,
+        rsiSlope,
         trend,
         higherTrend,
         bands,
@@ -258,7 +263,8 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
         resistance,
         volatility,
         compression,
-        momentum
+        momentum,
+        candleBias
       });
 
   const header = forceSignal ? "⚡ TRADEWISE TEST SIGNAL" : "📊 TRADEWISE ANALYSIS";
@@ -266,21 +272,22 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
 
   const message =
     `${header}\n\n` +
-    `💱 Pair: ${formatPair(pair)}\n` +
-    `⏱ Timeframe: 1M\n` +
+    `💱 Asset: ${formatPair(pair)}\n` +
+    `⏱ Suggested Expiry: ${signalResult.expiry}\n` +
     `🧭 5M Trend: ${higherTrend}\n` +
     `🛠 Mode: ${modeLabel}\n\n` +
     `📈 Trend: ${trend}\n` +
     `📍 Market State: ${marketState}\n` +
     `📉 RSI: ${rsi.toFixed(2)}\n` +
+    `📐 RSI Slope: ${rsiSlope}\n` +
     `🌪 Volatility: ${volatility.state}\n` +
     `🗜 Compression: ${compression.isCompressed ? "Yes" : "No"}\n` +
-    `🚀 Momentum: ${momentum.state}\n\n` +
+    `🚀 Momentum: ${momentum.state}\n` +
+    `🕯 Candle Bias: ${candleBias}\n\n` +
     `📌 Signal: ${signalResult.signal}\n` +
     `🏷 Quality: ${signalResult.quality}\n` +
     `🎯 Confidence: ${signalResult.confidence}%\n` +
     `🎲 Entry Type: ${signalResult.entryType}\n` +
-    `⏳ Suggested Expiry: ${signalResult.expiry}\n` +
     `💰 Stake Style: ${signalResult.stakeStyle}\n` +
     `📝 Reason: ${signalResult.reason}\n\n` +
     `🛡 Support: ${support.toFixed(2)}\n` +
@@ -290,18 +297,46 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
     `➖ BB Middle: ${bands.middle.toFixed(2)}\n` +
     `🔽 BB Lower: ${bands.lower.toFixed(2)}\n\n` +
     (forceSignal
-      ? `⚠️ Test Signal mode always returns BUY or SELL for live observation.`
-      : `⚠️ Safer setups are preferred. If the bot says NO SIGNAL, avoid forcing entry.`);
+      ? `⚠️ Test mode always returns BUY or SELL for live observation.`
+      : `⚠️ If the bot says NO SIGNAL, the setup is still considered weak.`);
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
 
-function detectMomentumBurst(closes) {
-  if (!closes || closes.length < 6) {
-    return { state: "Flat", score: 0 };
-  }
+function calculateRSISlope(closes, period = 14) {
+  if (!closes || closes.length < period + 6) return "Flat";
+
+  const rsiNow = calculateRSI(closes.slice(0), period);
+  const rsiPrev = calculateRSI(closes.slice(0, -3), period);
+
+  if (rsiNow > rsiPrev + 2) return "Rising";
+  if (rsiNow < rsiPrev - 2) return "Falling";
+  return "Flat";
+}
+
+function detectRecentCandleBias(closes) {
+  if (!closes || closes.length < 5) return "Neutral";
 
   const recent = closes.slice(-4);
+  let up = 0;
+  let down = 0;
+
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i] > recent[i - 1]) up += 1;
+    if (recent[i] < recent[i - 1]) down += 1;
+  }
+
+  if (up >= 3) return "Bullish";
+  if (down >= 3) return "Bearish";
+  if (up > down) return "Mild Bullish";
+  if (down > up) return "Mild Bearish";
+  return "Neutral";
+}
+
+function detectMomentumBurst(closes) {
+  if (!closes || closes.length < 6) return { state: "Flat", score: 0 };
+
+  const recent = closes.slice(-5);
   let upMoves = 0;
   let downMoves = 0;
 
@@ -310,10 +345,10 @@ function detectMomentumBurst(closes) {
     if (recent[i] < recent[i - 1]) downMoves += 1;
   }
 
-  if (upMoves >= 3) return { state: "Bullish Burst", score: 3 };
-  if (downMoves >= 3) return { state: "Bearish Burst", score: -3 };
-  if (upMoves === 2 && downMoves <= 1) return { state: "Mild Bullish", score: 1 };
-  if (downMoves === 2 && upMoves <= 1) return { state: "Mild Bearish", score: -1 };
+  if (upMoves >= 4) return { state: "Bullish Burst", score: 4 };
+  if (downMoves >= 4) return { state: "Bearish Burst", score: -4 };
+  if (upMoves >= 3) return { state: "Mild Bullish", score: 2 };
+  if (downMoves >= 3) return { state: "Mild Bearish", score: -2 };
   return { state: "Flat", score: 0 };
 }
 
@@ -371,7 +406,6 @@ function isAIQuestion(text) {
 
 function parseManualSignal(text) {
   const parts = text.split(" ").filter(Boolean);
-
   if (parts.length < 5) return { ok: false };
 
   const signal = parts[1].toUpperCase();
@@ -502,9 +536,7 @@ function getRequestedPair(text) {
 }
 
 function formatPair(pair) {
-  if (pair.endsWith("USDT")) {
-    return `${pair.slice(0, -4)}/USDT`;
-  }
+  if (pair.endsWith("USDT")) return `${pair.slice(0, -4)}/USDT`;
   return pair;
 }
 
@@ -542,7 +574,7 @@ function getAIKeyboard() {
   };
 }
 
-async function getBinanceCandles(pair, interval = "1m", limit = 30) {
+async function getBinanceCandles(pair, interval = "1m", limit = 40) {
   try {
     const response = await fetch(
       `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${interval}&limit=${limit}`
@@ -616,12 +648,12 @@ function calculateBollingerBands(values, period = 20, multiplier = 2) {
   const recent = values.slice(-period);
   const middle = average(recent);
   const variance = recent.reduce((sum, value) => sum + Math.pow(value - middle, 2), 0) / period;
-  const standardDeviation = Math.sqrt(variance);
+  const sd = Math.sqrt(variance);
 
   return {
-    upper: middle + multiplier * standardDeviation,
+    upper: middle + multiplier * sd,
     middle,
-    lower: middle - multiplier * standardDeviation
+    lower: middle - multiplier * sd
   };
 }
 
@@ -631,9 +663,9 @@ function calculateVolatilityState(highs, lows, closes) {
   const recentHighs = highs.slice(-10);
   const recentLows = lows.slice(-10);
   const recentRanges = recentHighs.map((high, i) => high - recentLows[i]);
-  const averageRange = average(recentRanges);
+  const avgRange = average(recentRanges);
   const latestClose = closes[closes.length - 1];
-  const ratio = latestClose > 0 ? averageRange / latestClose : 0;
+  const ratio = latestClose > 0 ? avgRange / latestClose : 0;
 
   if (ratio < 0.0008) return { state: "Low", ratio };
   if (ratio > 0.0035) return { state: "High", ratio };
@@ -641,9 +673,7 @@ function calculateVolatilityState(highs, lows, closes) {
 }
 
 function detectCompression(highs, lows, closes) {
-  if (!highs || !lows || !closes || closes.length < 20) {
-    return { isCompressed: false, ratio: 0 };
-  }
+  if (!highs || !lows || !closes || closes.length < 20) return { isCompressed: false, ratio: 0 };
 
   const recentHighs = highs.slice(-8);
   const recentLows = lows.slice(-8);
@@ -664,119 +694,129 @@ function getSignalQuality(signal, confidence) {
 
 function getTradeGuidance(signal, confidence, momentum) {
   let entryType = "Wait";
-  let expiry = "Avoid";
+  let expiry = "2m";
   let stakeStyle = "No entry";
 
   if (signal === "BUY" || signal === "SELL") {
-    entryType = momentum.score >= 2 || momentum.score <= -2 ? "Continuation" : "Reversal";
-    expiry = confidence >= 75 ? "1m" : "2m";
+    entryType = Math.abs(momentum.score) >= 3 ? "Continuation" : "Reversal";
+    expiry = "2m";
     stakeStyle = confidence >= 80 ? "Low to Medium" : "Low";
+  } else {
+    expiry = "Avoid";
   }
 
   return { entryType, expiry, stakeStyle };
 }
 
 function generateSignal(data) {
-  const { latestClose, rsi, trend, higherTrend, bands, support, resistance, volatility, compression, momentum } = data;
+  const { latestClose, rsi, rsiSlope, trend, higherTrend, bands, support, resistance, volatility, compression, momentum, candleBias } = data;
 
   const bandRange = bands.upper - bands.lower || 1;
-  const nearLowerBand = Math.abs(latestClose - bands.lower) / bandRange <= 0.15;
-  const nearUpperBand = Math.abs(latestClose - bands.upper) / bandRange <= 0.15;
-  const nearSupport = Math.abs(latestClose - support) / latestClose <= 0.003;
-  const nearResistance = Math.abs(latestClose - resistance) / latestClose <= 0.003;
-  const nearMiddleBand = Math.abs(latestClose - bands.middle) / bandRange <= 0.12;
-  const neutralRSI = rsi > 40 && rsi < 60;
+  const nearLowerBand = Math.abs(latestClose - bands.lower) / bandRange <= 0.18;
+  const nearUpperBand = Math.abs(latestClose - bands.upper) / bandRange <= 0.18;
+  const nearSupport = Math.abs(latestClose - support) / latestClose <= 0.0035;
+  const nearResistance = Math.abs(latestClose - resistance) / latestClose <= 0.0035;
+  const nearMiddleBand = Math.abs(latestClose - bands.middle) / bandRange <= 0.10;
+  const neutralRSI = rsi > 43 && rsi < 57;
 
   let signal = "NO SIGNAL";
-  let confidence = 52;
+  let confidence = 50;
   let reason = "Conditions are mixed. Safer to wait.";
 
-  if (volatility.state === "Low") {
+  if (volatility.state === "Low" && compression.isCompressed) {
     const guide = getTradeGuidance("NO SIGNAL", 30, momentum);
-    return { signal: "NO SIGNAL", confidence: 30, quality: "Avoid", reason: "Volatility is too low. Market is too compressed for a safer entry.", ...guide };
+    return {
+      signal: "NO SIGNAL",
+      confidence: 30,
+      quality: "Avoid",
+      reason: "Volatility is too low and market is compressed. Edge is weak.",
+      ...guide
+    };
   }
 
-  if (compression.isCompressed && trend === "Sideways") {
-    const guide = getTradeGuidance("NO SIGNAL", 33, momentum);
-    return { signal: "NO SIGNAL", confidence: 33, quality: "Avoid", reason: "Market is in compression with sideways behavior. Better to wait for clearer expansion.", ...guide };
-  }
-
-  if (nearMiddleBand && neutralRSI && trend === "Sideways") {
+  if (nearMiddleBand && neutralRSI && trend === "Sideways" && higherTrend === "Sideways") {
     const guide = getTradeGuidance("NO SIGNAL", 35, momentum);
-    return { signal: "NO SIGNAL", confidence: 35, quality: "Avoid", reason: "Price is near the middle band with neutral RSI and sideways trend. No clear edge.", ...guide };
+    return {
+      signal: "NO SIGNAL",
+      confidence: 35,
+      quality: "Avoid",
+      reason: "Price is sitting around the middle band with neutral conditions.",
+      ...guide
+    };
   }
 
-  if ((nearLowerBand || nearSupport) && rsi <= 35 && trend !== "Down") {
+  let buyScore = 0;
+  let sellScore = 0;
+
+  if (nearLowerBand) buyScore += 2;
+  if (nearSupport) buyScore += 2;
+  if (rsi <= 38) buyScore += 2;
+  if (rsiSlope === "Rising") buyScore += 2;
+  if (trend === "Up") buyScore += 2;
+  if (higherTrend === "Up") buyScore += 2;
+  if (momentum.score > 0) buyScore += 2;
+  if (candleBias.includes("Bullish")) buyScore += 1;
+
+  if (nearUpperBand) sellScore += 2;
+  if (nearResistance) sellScore += 2;
+  if (rsi >= 62) sellScore += 2;
+  if (rsiSlope === "Falling") sellScore += 2;
+  if (trend === "Down") sellScore += 2;
+  if (higherTrend === "Down") sellScore += 2;
+  if (momentum.score < 0) sellScore += 2;
+  if (candleBias.includes("Bearish")) sellScore += 1;
+
+  if (buyScore >= sellScore + 2) {
     signal = "BUY";
-    confidence = 74;
-    reason = "Price is near lower band/support with RSI weakness and no strong downtrend.";
-    if (trend === "Up") {
-      confidence += 8;
-      reason = "Price is near lower band/support, RSI is weak, and trend is turning upward.";
-    } else if (trend === "Sideways") {
-      confidence += 3;
-    }
-    if (nearLowerBand && nearSupport) confidence += 6;
-    if (rsi <= 30) confidence += 4;
-  } else if ((nearUpperBand || nearResistance) && rsi >= 65 && trend !== "Up") {
+    confidence = 58 + buyScore * 3;
+    reason = "Bullish conditions are stronger across trend, RSI, and recent candle behavior.";
+  } else if (sellScore >= buyScore + 2) {
     signal = "SELL";
-    confidence = 74;
-    reason = "Price is near upper band/resistance with RSI strength and no strong uptrend.";
-    if (trend === "Down") {
-      confidence += 8;
-      reason = "Price is near upper band/resistance, RSI is elevated, and trend is turning downward.";
-    } else if (trend === "Sideways") {
-      confidence += 3;
-    }
-    if (nearUpperBand && nearResistance) confidence += 6;
-    if (rsi >= 70) confidence += 4;
-  }
-
-  if (signal === "BUY" && higherTrend === "Down") {
-    confidence -= 12;
-    reason += " Higher timeframe trend is still down, so confirmation is weaker.";
-  }
-
-  if (signal === "SELL" && higherTrend === "Up") {
-    confidence -= 12;
-    reason += " Higher timeframe trend is still up, so confirmation is weaker.";
+    confidence = 58 + sellScore * 3;
+    reason = "Bearish conditions are stronger across trend, RSI, and recent candle behavior.";
   }
 
   if (signal !== "NO SIGNAL" && volatility.state === "High") {
-    confidence -= 10;
-    reason += " Volatility is high, so confidence is reduced.";
+    confidence -= 8;
+    reason += " High volatility reduces stability.";
   }
 
   if (signal !== "NO SIGNAL" && compression.isCompressed) {
+    confidence -= 6;
+    reason += " Compression reduces breakout reliability.";
+  }
+
+  if (signal === "BUY" && higherTrend === "Down") {
     confidence -= 8;
-    reason += " Compression is still present, so breakout confirmation is weak.";
+    reason += " 5M trend still leans down.";
   }
 
-  if (signal === "NO SIGNAL" && neutralRSI) {
-    confidence = 40;
-    reason = "RSI is neutral and setup lacks strong reversal pressure.";
+  if (signal === "SELL" && higherTrend === "Up") {
+    confidence -= 8;
+    reason += " 5M trend still leans up.";
   }
 
-  confidence = Math.max(25, Math.min(95, confidence));
+  confidence = Math.max(28, Math.min(92, confidence));
 
-  if (signal !== "NO SIGNAL" && confidence < 55) {
-    signal = "NO SIGNAL";
-    reason = "Setup exists, but confirmation is too weak after filters. Safer to wait.";
+  if (signal === "NO SIGNAL" && (buyScore >= 5 || sellScore >= 5)) {
+    signal = buyScore > sellScore ? "BUY" : "SELL";
+    confidence = 55;
+    reason = "Directional bias exists, but confirmation is still moderate.";
   }
 
-  const guidance = getTradeGuidance(signal, confidence, momentum);
+  const guide = getTradeGuidance(signal, confidence, momentum);
 
   return {
     signal,
     confidence,
     quality: getSignalQuality(signal, confidence),
     reason,
-    ...guidance
+    ...guide
   };
 }
 
 function generateForcedSignal(data) {
-  const { latestClose, rsi, trend, higherTrend, bands, support, resistance, volatility, compression, momentum } = data;
+  const { latestClose, rsi, rsiSlope, trend, higherTrend, bands, support, resistance, volatility, compression, momentum, candleBias } = data;
 
   let buyScore = 0;
   let sellScore = 0;
@@ -784,20 +824,28 @@ function generateForcedSignal(data) {
 
   if (latestClose <= bands.middle) {
     buyScore += 1;
-    reasons.push("price is below or near the middle band");
+    reasons.push("price is below or near mid-band");
   } else {
     sellScore += 1;
-    reasons.push("price is above or near the middle band");
+    reasons.push("price is above or near mid-band");
   }
 
-  if (rsi <= 45) {
+  if (rsi <= 50) {
     buyScore += 2;
-    reasons.push("RSI leans weak");
+    reasons.push("RSI leans weak/cheap");
+  } else {
+    sellScore += 2;
+    reasons.push("RSI leans strong/expensive");
   }
 
-  if (rsi >= 55) {
+  if (rsiSlope === "Rising") {
+    buyScore += 2;
+    reasons.push("RSI slope is rising");
+  }
+
+  if (rsiSlope === "Falling") {
     sellScore += 2;
-    reasons.push("RSI leans strong");
+    reasons.push("RSI slope is falling");
   }
 
   if (trend === "Up") {
@@ -830,32 +878,42 @@ function generateForcedSignal(data) {
     reasons.push("momentum is bearish");
   }
 
-  if (Math.abs(latestClose - support) / latestClose <= 0.003) {
+  if (candleBias.includes("Bullish")) {
+    buyScore += 1;
+    reasons.push("recent candles lean bullish");
+  }
+
+  if (candleBias.includes("Bearish")) {
+    sellScore += 1;
+    reasons.push("recent candles lean bearish");
+  }
+
+  if (Math.abs(latestClose - support) / latestClose <= 0.0035) {
     buyScore += 1;
     reasons.push("price is near support");
   }
 
-  if (Math.abs(latestClose - resistance) / latestClose <= 0.003) {
+  if (Math.abs(latestClose - resistance) / latestClose <= 0.0035) {
     sellScore += 1;
     reasons.push("price is near resistance");
   }
 
   let signal = buyScore >= sellScore ? "BUY" : "SELL";
-  let confidence = 60 + Math.abs(buyScore - sellScore) * 5;
+  let confidence = 62 + Math.abs(buyScore - sellScore) * 4;
 
-  if (volatility.state === "High") confidence -= 8;
-  if (compression.isCompressed) confidence -= 6;
+  if (volatility.state === "High") confidence -= 6;
+  if (compression.isCompressed) confidence -= 5;
 
-  confidence = Math.max(52, Math.min(90, confidence));
+  confidence = Math.max(55, Math.min(90, confidence));
 
-  const guidance = getTradeGuidance(signal, confidence, momentum);
+  const guide = getTradeGuidance(signal, confidence, momentum);
 
   return {
     signal,
     confidence,
     quality: getSignalQuality(signal, confidence),
     reason: `Forced directional bias based on ${reasons.slice(0, 4).join(", ")}.`,
-    ...guidance
+    ...guide
   };
 }
 
@@ -866,7 +924,6 @@ function average(values) {
 
 async function sendTelegramMessage(token, chatId, text, replyMarkup = null) {
   const telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
-
   const payload = { chat_id: chatId, text };
   if (replyMarkup) payload.reply_markup = replyMarkup;
 
