@@ -85,7 +85,9 @@ export default {
           text.startsWith("/analyze ")
         ) {
           const pair = getRequestedPair(text);
-          await handleAnalyze(env, chatId, pair, isOwner);
+          await handleAnalyze(env, chatId, pair, isOwner, false);
+        } else if (text === "⚡ Test Signal") {
+          await handleAnalyze(env, chatId, "BTCUSDT", isOwner, true);
         } else if (text === "🧠 Ask AI") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
@@ -185,7 +187,7 @@ export default {
   }
 };
 
-async function handleAnalyze(env, chatId, pair, isOwner) {
+async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
   const market1m = await getBinanceCandles(pair, "1m", 30);
   const market5m = await getBinanceCandles(pair, "5m", 30);
 
@@ -211,24 +213,41 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
   const volatility = calculateVolatilityState(market1m.highs, market1m.lows, market1m.closes);
   const compression = detectCompression(market1m.highs, market1m.lows, market1m.closes);
 
-  const signalResult = generateSignal({
-    latestClose,
-    rsi,
-    trend,
-    higherTrend,
-    movingAverage,
-    bands,
-    support,
-    resistance,
-    volatility,
-    compression
-  });
+  const signalResult = forceSignal
+    ? generateForcedSignal({
+        latestClose,
+        rsi,
+        trend,
+        higherTrend,
+        movingAverage,
+        bands,
+        support,
+        resistance,
+        volatility,
+        compression
+      })
+    : generateSignal({
+        latestClose,
+        rsi,
+        trend,
+        higherTrend,
+        movingAverage,
+        bands,
+        support,
+        resistance,
+        volatility,
+        compression
+      });
+
+  const header = forceSignal ? "⚡ TRADEWISE TEST SIGNAL" : "📊 TRADEWISE ANALYSIS";
+  const modeLabel = forceSignal ? "Test Mode" : "Safe Mode";
 
   const message =
-    `📊 TRADEWISE ANALYSIS\n\n` +
+    `${header}\n\n` +
     `💱 Pair: ${formatPair(pair)}\n` +
     `⏱ Timeframe: 1M\n` +
-    `🧭 5M Trend: ${higherTrend}\n\n` +
+    `🧭 5M Trend: ${higherTrend}\n` +
+    `🛠 Mode: ${modeLabel}\n\n` +
     `📈 Trend: ${trend}\n` +
     `📍 Market State: ${marketState}\n` +
     `📉 RSI: ${rsi.toFixed(2)}\n` +
@@ -244,7 +263,9 @@ async function handleAnalyze(env, chatId, pair, isOwner) {
     `🔼 BB Upper: ${bands.upper.toFixed(2)}\n` +
     `➖ BB Middle: ${bands.middle.toFixed(2)}\n` +
     `🔽 BB Lower: ${bands.lower.toFixed(2)}\n\n` +
-    `⚠️ Safer setups are preferred. If the bot says NO SIGNAL, avoid forcing entry.`;
+    (forceSignal
+      ? `⚠️ Test Signal mode always returns BUY or SELL for live observation.`
+      : `⚠️ Safer setups are preferred. If the bot says NO SIGNAL, avoid forcing entry.`);
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
 }
@@ -499,8 +520,9 @@ function formatPair(pair) {
 function getKeyboard(isOwner = false) {
   const keyboard = [
     [{ text: "📊 Analyze" }, { text: "₿ BTCUSDT" }, { text: "Ξ ETHUSDT" }],
-    [{ text: "🧠 Ask AI" }, { text: "📘 Help" }],
-    [{ text: "⚠️ Risk Tips" }, { text: "👤 My Status" }]
+    [{ text: "⚡ Test Signal" }, { text: "🧠 Ask AI" }],
+    [{ text: "📘 Help" }, { text: "⚠️ Risk Tips" }],
+    [{ text: "👤 My Status" }]
   ];
 
   if (isOwner) {
@@ -701,10 +723,6 @@ function detectCompression(highs, lows, closes) {
 }
 
 function getSignalQuality(signal, confidence) {
-  if (signal === "NO SIGNAL") {
-    return "Avoid";
-  }
-
   if (confidence >= 85) {
     return "Strong";
   }
@@ -713,7 +731,11 @@ function getSignalQuality(signal, confidence) {
     return "Moderate";
   }
 
-  return "Weak";
+  if (confidence >= 55) {
+    return signal === "NO SIGNAL" ? "Caution" : "Weak";
+  }
+
+  return signal === "NO SIGNAL" ? "Avoid" : "Weak";
 }
 
 function generateSignal(data) {
@@ -845,6 +867,88 @@ function generateSignal(data) {
     confidence,
     quality: getSignalQuality(signal, confidence),
     reason
+  };
+}
+
+function generateForcedSignal(data) {
+  const { rsi, trend, higherTrend, bands, latestClose, support, resistance, volatility, compression } = data;
+
+  let buyScore = 0;
+  let sellScore = 0;
+  let reasonParts = [];
+
+  if (latestClose <= bands.middle) {
+    buyScore += 1;
+    reasonParts.push("price is below or near the middle band");
+  } else {
+    sellScore += 1;
+    reasonParts.push("price is above or near the middle band");
+  }
+
+  if (rsi <= 45) {
+    buyScore += 2;
+    reasonParts.push("RSI leans weak");
+  }
+
+  if (rsi >= 55) {
+    sellScore += 2;
+    reasonParts.push("RSI leans strong");
+  }
+
+  if (trend === "Up") {
+    buyScore += 2;
+    reasonParts.push("1M trend is up");
+  }
+
+  if (trend === "Down") {
+    sellScore += 2;
+    reasonParts.push("1M trend is down");
+  }
+
+  if (higherTrend === "Up") {
+    buyScore += 2;
+    reasonParts.push("5M trend supports upside");
+  }
+
+  if (higherTrend === "Down") {
+    sellScore += 2;
+    reasonParts.push("5M trend supports downside");
+  }
+
+  if (Math.abs(latestClose - support) / latestClose <= 0.003) {
+    buyScore += 1;
+    reasonParts.push("price is near support");
+  }
+
+  if (Math.abs(latestClose - resistance) / latestClose <= 0.003) {
+    sellScore += 1;
+    reasonParts.push("price is near resistance");
+  }
+
+  let signal = buyScore >= sellScore ? "BUY" : "SELL";
+  let confidence = 60 + Math.abs(buyScore - sellScore) * 5;
+
+  if (volatility.state === "High") {
+    confidence -= 8;
+  }
+
+  if (compression.isCompressed) {
+    confidence -= 6;
+  }
+
+  if (confidence < 52) {
+    confidence = 52;
+  }
+
+  if (confidence > 90) {
+    confidence = 90;
+  }
+
+  return {
+    signal,
+    confidence,
+    quality: getSignalQuality(signal, confidence),
+    reason: `Forced directional bias based on ${reasonParts.slice(0, 3).join(", ")}.`
   };
 }
 
