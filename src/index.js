@@ -85,8 +85,22 @@ export default {
           text.startsWith("/analyze ")
         ) {
           const pair = getRequestedPair(text);
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "🔎 Predicting safe market signal...",
+            getKeyboard(isOwner)
+          );
+          await sleep(2200);
           await handleAnalyze(env, chatId, pair, isOwner, false);
         } else if (text === "⚡ Test Signal") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "⚡ Predicting forced directional signal...",
+            getKeyboard(isOwner)
+          );
+          await sleep(2200);
           await handleAnalyze(env, chatId, "BTCUSDT", isOwner, true);
         } else if (text === "🧠 Ask AI") {
           await sendTelegramMessage(
@@ -187,6 +201,10 @@ export default {
   }
 };
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
   const market1m = await getBinanceCandles(pair, "1m", 30);
   const market5m = await getBinanceCandles(pair, "5m", 30);
@@ -212,6 +230,7 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
   const resistance = Math.max(...market1m.highs.slice(-20));
   const volatility = calculateVolatilityState(market1m.highs, market1m.lows, market1m.closes);
   const compression = detectCompression(market1m.highs, market1m.lows, market1m.closes);
+  const momentum = detectMomentumBurst(market1m.closes);
 
   const signalResult = forceSignal
     ? generateForcedSignal({
@@ -224,7 +243,8 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
         support,
         resistance,
         volatility,
-        compression
+        compression,
+        momentum
       })
     : generateSignal({
         latestClose,
@@ -236,7 +256,8 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
         support,
         resistance,
         volatility,
-        compression
+        compression,
+        momentum
       });
 
   const header = forceSignal ? "⚡ TRADEWISE TEST SIGNAL" : "📊 TRADEWISE ANALYSIS";
@@ -252,10 +273,14 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
     `📍 Market State: ${marketState}\n` +
     `📉 RSI: ${rsi.toFixed(2)}\n` +
     `🌪 Volatility: ${volatility.state}\n` +
-    `🗜 Compression: ${compression.isCompressed ? "Yes" : "No"}\n\n` +
+    `🗜 Compression: ${compression.isCompressed ? "Yes" : "No"}\n` +
+    `🚀 Momentum: ${momentum.state}\n\n` +
     `📌 Signal: ${signalResult.signal}\n` +
     `🏷 Quality: ${signalResult.quality}\n` +
     `🎯 Confidence: ${signalResult.confidence}%\n` +
+    `🎲 Entry Type: ${signalResult.entryType}\n` +
+    `⏳ Suggested Expiry: ${signalResult.expiry}\n` +
+    `💰 Stake Style: ${signalResult.stakeStyle}\n` +
     `📝 Reason: ${signalResult.reason}\n\n` +
     `🛡 Support: ${support.toFixed(2)}\n` +
     `🚧 Resistance: ${resistance.toFixed(2)}\n` +
@@ -268,6 +293,39 @@ async function handleAnalyze(env, chatId, pair, isOwner, forceSignal = false) {
       : `⚠️ Safer setups are preferred. If the bot says NO SIGNAL, avoid forcing entry.`);
 
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, message, getKeyboard(isOwner));
+}
+
+function detectMomentumBurst(closes) {
+  if (!closes || closes.length < 6) {
+    return { state: "Flat", score: 0 };
+  }
+
+  const recent = closes.slice(-4);
+  let upMoves = 0;
+  let downMoves = 0;
+
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i] > recent[i - 1]) upMoves += 1;
+    if (recent[i] < recent[i - 1]) downMoves += 1;
+  }
+
+  if (upMoves >= 3) {
+    return { state: "Bullish Burst", score: 3 };
+  }
+
+  if (downMoves >= 3) {
+    return { state: "Bearish Burst", score: -3 };
+  }
+
+  if (upMoves === 2 && downMoves <= 1) {
+    return { state: "Mild Bullish", score: 1 };
+  }
+
+  if (downMoves === 2 && upMoves <= 1) {
+    return { state: "Mild Bearish", score: -1 };
+  }
+
+  return { state: "Flat", score: 0 };
 }
 
 function getHelpAnswer(text) {
@@ -597,28 +655,21 @@ function calculateRSI(closes, period = 14) {
   for (let i = closes.length - period; i < closes.length; i++) {
     const change = closes[i] - closes[i - 1];
 
-    if (change > 0) {
-      gains += change;
-    } else {
-      losses += Math.abs(change);
-    }
+    if (change > 0) gains += change;
+    else losses += Math.abs(change);
   }
 
   const averageGain = gains / period;
   const averageLoss = losses / period;
 
-  if (averageLoss === 0) {
-    return 100;
-  }
+  if (averageLoss === 0) return 100;
 
   const rs = averageGain / averageLoss;
   return 100 - (100 / (1 + rs));
 }
 
 function detectTrend(closes) {
-  if (!closes || closes.length < 10) {
-    return "Sideways";
-  }
+  if (!closes || closes.length < 10) return "Sideways";
 
   const recent = closes.slice(-5);
   const older = closes.slice(-10, -5);
@@ -626,46 +677,27 @@ function detectTrend(closes) {
   const recentAverage = average(recent);
   const olderAverage = average(older);
 
-  if (recentAverage > olderAverage * 1.001) {
-    return "Up";
-  }
-
-  if (recentAverage < olderAverage * 0.999) {
-    return "Down";
-  }
+  if (recentAverage > olderAverage * 1.001) return "Up";
+  if (recentAverage < olderAverage * 0.999) return "Down";
 
   return "Sideways";
 }
 
 function getMarketState(rsi) {
-  if (rsi >= 70) {
-    return "Overbought";
-  }
-
-  if (rsi <= 30) {
-    return "Oversold";
-  }
-
+  if (rsi >= 70) return "Overbought";
+  if (rsi <= 30) return "Oversold";
   return "Neutral";
 }
 
 function calculateSMA(values, period = 20) {
-  if (!values || values.length < period) {
-    return values[values.length - 1] || 0;
-  }
-
-  const recent = values.slice(-period);
-  return average(recent);
+  if (!values || values.length < period) return values[values.length - 1] || 0;
+  return average(values.slice(-period));
 }
 
 function calculateBollingerBands(values, period = 20, multiplier = 2) {
   if (!values || values.length < period) {
     const fallback = values[values.length - 1] || 0;
-    return {
-      upper: fallback,
-      middle: fallback,
-      lower: fallback
-    };
+    return { upper: fallback, middle: fallback, lower: fallback };
   }
 
   const recent = values.slice(-period);
@@ -693,14 +725,8 @@ function calculateVolatilityState(highs, lows, closes) {
   const latestClose = closes[closes.length - 1];
   const rangeRatio = latestClose > 0 ? averageRange / latestClose : 0;
 
-  if (rangeRatio < 0.0008) {
-    return { state: "Low", ratio: rangeRatio };
-  }
-
-  if (rangeRatio > 0.0035) {
-    return { state: "High", ratio: rangeRatio };
-  }
-
+  if (rangeRatio < 0.0008) return { state: "Low", ratio: rangeRatio };
+  if (rangeRatio > 0.0035) return { state: "High", ratio: rangeRatio };
   return { state: "Normal", ratio: rangeRatio };
 }
 
@@ -720,266 +746,4 @@ function detectCompression(highs, lows, closes) {
     isCompressed: compressionRatio < 0.0018,
     ratio: compressionRatio
   };
-}
-
-function getSignalQuality(signal, confidence) {
-  if (confidence >= 85) {
-    return "Strong";
-  }
-
-  if (confidence >= 70) {
-    return "Moderate";
-  }
-
-  if (confidence >= 55) {
-    return signal === "NO SIGNAL" ? "Caution" : "Weak";
-  }
-
-  return signal === "NO SIGNAL" ? "Avoid" : "Weak";
-}
-
-function generateSignal(data) {
-  const { latestClose, rsi, trend, higherTrend, bands, support, resistance, volatility, compression } = data;
-
-  const bandRange = bands.upper - bands.lower || 1;
-  const middleDistanceRatio = Math.abs(latestClose - bands.middle) / bandRange;
-  const distanceToLowerBand = Math.abs(latestClose - bands.lower) / bandRange;
-  const distanceToUpperBand = Math.abs(latestClose - bands.upper) / bandRange;
-
-  const nearLowerBand = distanceToLowerBand <= 0.15;
-  const nearUpperBand = distanceToUpperBand <= 0.15;
-  const nearSupport = Math.abs(latestClose - support) / latestClose <= 0.003;
-  const nearResistance = Math.abs(latestClose - resistance) / latestClose <= 0.003;
-  const nearMiddleBand = middleDistanceRatio <= 0.12;
-  const neutralRSI = rsi > 40 && rsi < 60;
-
-  let signal = "NO SIGNAL";
-  let confidence = 52;
-  let reason = "Conditions are mixed. Safer to wait.";
-
-  if (volatility.state === "Low") {
-    return {
-      signal: "NO SIGNAL",
-      confidence: 30,
-      quality: "Avoid",
-      reason: "Volatility is too low. Market is too compressed for a safer entry."
-    };
-  }
-
-  if (compression.isCompressed && trend === "Sideways") {
-    return {
-      signal: "NO SIGNAL",
-      confidence: 33,
-      quality: "Avoid",
-      reason: "Market is in compression with sideways behavior. Better to wait for clearer expansion."
-    };
-  }
-
-  if (nearMiddleBand && neutralRSI && trend === "Sideways") {
-    return {
-      signal: "NO SIGNAL",
-      confidence: 35,
-      quality: "Avoid",
-      reason: "Price is near the middle band with neutral RSI and sideways trend. No clear edge."
-    };
-  }
-
-  if ((nearLowerBand || nearSupport) && rsi <= 35 && trend !== "Down") {
-    signal = "BUY";
-    confidence = 74;
-    reason = "Price is near lower band/support with RSI weakness and no strong downtrend.";
-
-    if (trend === "Up") {
-      confidence += 8;
-      reason = "Price is near lower band/support, RSI is weak, and trend is turning upward.";
-    } else if (trend === "Sideways") {
-      confidence += 3;
-    }
-
-    if (nearLowerBand && nearSupport) {
-      confidence += 6;
-    }
-
-    if (rsi <= 30) {
-      confidence += 4;
-    }
-  } else if ((nearUpperBand || nearResistance) && rsi >= 65 && trend !== "Up") {
-    signal = "SELL";
-    confidence = 74;
-    reason = "Price is near upper band/resistance with RSI strength and no strong uptrend.";
-
-    if (trend === "Down") {
-      confidence += 8;
-      reason = "Price is near upper band/resistance, RSI is elevated, and trend is turning downward.";
-    } else if (trend === "Sideways") {
-      confidence += 3;
-    }
-
-    if (nearUpperBand && nearResistance) {
-      confidence += 6;
-    }
-
-    if (rsi >= 70) {
-      confidence += 4;
-    }
-  }
-
-  if (signal === "BUY" && higherTrend === "Down") {
-    confidence -= 12;
-    reason += " Higher timeframe trend is still down, so confirmation is weaker.";
-  }
-
-  if (signal === "SELL" && higherTrend === "Up") {
-    confidence -= 12;
-    reason += " Higher timeframe trend is still up, so confirmation is weaker.";
-  }
-
-  if (signal !== "NO SIGNAL" && volatility.state === "High") {
-    confidence -= 10;
-    reason += " Volatility is high, so confidence is reduced.";
-  }
-
-  if (signal !== "NO SIGNAL" && compression.isCompressed) {
-    confidence -= 8;
-    reason += " Compression is still present, so breakout confirmation is weak.";
-  }
-
-  if (signal === "NO SIGNAL" && neutralRSI) {
-    confidence = 40;
-    reason = "RSI is neutral and setup lacks strong reversal pressure.";
-  }
-
-  if (confidence < 25) {
-    confidence = 25;
-  }
-
-  if (confidence > 95) {
-    confidence = 95;
-  }
-
-  if (signal !== "NO SIGNAL" && confidence < 55) {
-    signal = "NO SIGNAL";
-    reason = "Setup exists, but confirmation is too weak after filters. Safer to wait.";
-  }
-
-  return {
-    signal,
-    confidence,
-    quality: getSignalQuality(signal, confidence),
-    reason
-  };
-}
-
-function generateForcedSignal(data) {
-  const { rsi, trend, higherTrend, bands, latestClose, support, resistance, volatility, compression } = data;
-
-  let buyScore = 0;
-  let sellScore = 0;
-  let reasonParts = [];
-
-  if (latestClose <= bands.middle) {
-    buyScore += 1;
-    reasonParts.push("price is below or near the middle band");
-  } else {
-    sellScore += 1;
-    reasonParts.push("price is above or near the middle band");
-  }
-
-  if (rsi <= 45) {
-    buyScore += 2;
-    reasonParts.push("RSI leans weak");
-  }
-
-  if (rsi >= 55) {
-    sellScore += 2;
-    reasonParts.push("RSI leans strong");
-  }
-
-  if (trend === "Up") {
-    buyScore += 2;
-    reasonParts.push("1M trend is up");
-  }
-
-  if (trend === "Down") {
-    sellScore += 2;
-    reasonParts.push("1M trend is down");
-  }
-
-  if (higherTrend === "Up") {
-    buyScore += 2;
-    reasonParts.push("5M trend supports upside");
-  }
-
-  if (higherTrend === "Down") {
-    sellScore += 2;
-    reasonParts.push("5M trend supports downside");
-  }
-
-  if (Math.abs(latestClose - support) / latestClose <= 0.003) {
-    buyScore += 1;
-    reasonParts.push("price is near support");
-  }
-
-  if (Math.abs(latestClose - resistance) / latestClose <= 0.003) {
-    sellScore += 1;
-    reasonParts.push("price is near resistance");
-  }
-
-  let signal = buyScore >= sellScore ? "BUY" : "SELL";
-  let confidence = 60 + Math.abs(buyScore - sellScore) * 5;
-
-  if (volatility.state === "High") {
-    confidence -= 8;
-  }
-
-  if (compression.isCompressed) {
-    confidence -= 6;
-  }
-
-  if (confidence < 52) {
-    confidence = 52;
-  }
-
-  if (confidence > 90) {
-    confidence = 90;
-  }
-
-  return {
-    signal,
-    confidence,
-    quality: getSignalQuality(signal, confidence),
-    reason: `Forced directional bias based on ${reasonParts.slice(0, 3).join(", ")}.`
-  };
-}
-
-function average(values) {
-  if (!values || values.length === 0) {
-    return 0;
-  }
-
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return total / values.length;
-}
-
-async function sendTelegramMessage(token, chatId, text, replyMarkup = null) {
-  const telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
-
-  const payload = {
-    chat_id: chatId,
-    text: text
-  };
-
-  if (replyMarkup) {
-    payload.reply_markup = replyMarkup;
-  }
-
-  const response = await fetch(telegramUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
-
-  return response;
 }
